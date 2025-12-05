@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dev Notebook</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- Quill Rich Text Editor -->
+    <link href="css/quill.snow.css" rel="stylesheet">
+    <!-- Syntax Highlighting -->
+    <link rel="stylesheet" href="css/vs2015.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="search-box">
+                    <span class="material-icons search-icon">search</span>
+                    <input type="text" id="search-input" placeholder="Search notes...">
+                </div>
+                <button id="add-note-btn" class="icon-btn" title="Create New Note">
+                    <span class="material-icons">add</span>
+                </button>
+            </div>
+            <ul id="notes-list" class="notes-list">
+                </ul>
+        </aside>
+
+        <main class="editor">
+            <div class="editor-header">
+                <div class="header-left">
+                    <button id="toggle-sidebar-btn" class="icon-btn" title="Toggle Sidebar">
+                        <span class="material-icons">menu</span>
+                    </button>
+                    <input type="text" id="note-title" placeholder="Note Title">
+                </div>
+                <div class="actions">
+                    <div id="notification" class="notification"></div>
+                    <span id="save-status" class="status">Saved</span>
+                    <button id="share-btn" class="icon-btn" title="Share Current Note">
+                        <span class="material-icons">share</span>
+                    </button>
+                    <button id="export-single-btn" class="icon-btn" title="Export Current Note">
+                        <span class="material-icons">description</span>
+                    </button>
+                    <button id="import-btn" class="icon-btn" title="Import Notebook">
+                        <span class="material-icons">file_upload</span>
+                    </button>
+                    <input type="file" id="import-input" accept=".json" style="display: none;">
+                    <button id="theme-toggle-btn" class="icon-btn" title="Toggle Theme">
+                        <span class="material-icons">brightness_auto</span>
+                    </button>
+                    <button id="delete-note-btn" class="icon-btn danger" title="Delete Note">
+                        <span class="material-icons">delete</span>
+                    </button>
+                    <button id="settings-btn" class="icon-btn" title="Settings">
+                        <span class="material-icons">settings</span>
+                    </button>
+                    <button id="todo-toggle-btn" class="icon-btn" title="Toggle To-Do List">
+                        <span class="material-icons">checklist</span>
+                    </button>
+                </div>
+            </div>
+            <div id="editor-content" class="editor-content"></div>
+        </main>
+
+        <aside class="todo-sidebar">
+            <div class="todo-header">
+                <h3>To-Do List</h3>
+                <div class="todo-header-actions">
+                    <button id="clear-all-todos-btn" class="icon-btn" title="Clear All Todos">
+                        <span class="material-icons">delete_sweep</span>
+                    </button>
+                    <button id="close-todo-btn" class="icon-btn">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+            </div>
+            <div class="todo-input-container">
+                <input type="text" id="new-todo-input" placeholder="Add a task...">
+                <button id="add-todo-btn" class="icon-btn primary">
+                    <span class="material-icons">add</span>
+                </button>
+            </div>
+            <ul id="todo-list" class="todo-list">
+                <!-- Todo items will be injected here -->
+            </ul>
+        </aside>
+    </div>
+    <button id="fab-ai-btn" class="fab-btn" title="AI Assistant">
+        <span class="material-icons">auto_awesome</span>
+    </button>
+    <button id="fab-add-note" class="fab-btn" title="Create New Note">
+        <span class="material-icons">add</span>
+    </button>
+    
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="close-settings-btn" class="icon-btn">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h3>System Instructions</h3>
+                    <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">Define how the AI should behave (e.g., "You are a helpful assistant").</p>
+                    <textarea id="system-instruction" class="input-field" rows="3" placeholder="You are a helpful assistant that generates notes..."></textarea>
+                </div>
+
+                <div class="settings-section">
+                    <h3>AI Providers</h3>
+                    <p class="text-muted" style="font-size: 12px; margin-bottom: 15px;">Enable the providers you want to use and enter their API keys.</p>
+                    
+                    <!-- OpenAI -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-openai">OpenAI</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-openai">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="openai-key-container" class="key-container hidden">
+                            <input type="password" id="settings-openai-key" class="input-field" placeholder="sk-...">
+                        </div>
+                    </div>
+
+                    <!-- Google Gemini -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-gemini">Google Gemini</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-gemini">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="gemini-key-container" class="key-container hidden">
+                            <input type="password" id="settings-gemini-key" class="input-field" placeholder="AIza...">
+                        </div>
+                    </div>
+
+                    <!-- Anthropic -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-anthropic">Anthropic</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-anthropic">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="anthropic-key-container" class="key-container hidden">
+                            <input type="password" id="settings-anthropic-key" class="input-field" placeholder="sk-ant-...">
+                        </div>
+                    </div>
+
+                    <!-- xAI -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-xai">xAI (Grok)</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-xai">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="xai-key-container" class="key-container hidden">
+                            <input type="password" id="settings-xai-key" class="input-field" placeholder="xai-...">
+                        </div>
+                    </div>
+
+                    <!-- DeepSeek -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-deepseek">DeepSeek</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-deepseek">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="deepseek-key-container" class="key-container hidden">
+                            <input type="password" id="settings-deepseek-key" class="input-field" placeholder="ds-...">
+                        </div>
+                    </div>
+
+                    <!-- Mistral -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-mistral">Mistral AI</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-mistral">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="mistral-key-container" class="key-container hidden">
+                            <input type="password" id="settings-mistral-key" class="input-field" placeholder="Key...">
+                        </div>
+                    </div>
+
+                    <!-- Cohere -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-cohere">Cohere</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-cohere">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="cohere-key-container" class="key-container hidden">
+                            <input type="password" id="settings-cohere-key" class="input-field" placeholder="Key...">
+                        </div>
+                    </div>
+
+                    <!-- Hugging Face -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-huggingface">Hugging Face</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-huggingface">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="huggingface-key-container" class="key-container hidden">
+                            <input type="password" id="settings-huggingface-key" class="input-field" placeholder="hf_...">
+                        </div>
+                    </div>
+
+                    <!-- NVIDIA -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-nvidia">NVIDIA</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-nvidia">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="nvidia-key-container" class="key-container hidden">
+                            <input type="password" id="settings-nvidia-key" class="input-field" placeholder="nvapi-...">
+                        </div>
+                    </div>
+
+                    <!-- Alibaba (Qwen) -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-alibaba">Alibaba Cloud (Qwen)</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-alibaba">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="alibaba-key-container" class="key-container hidden">
+                            <input type="password" id="settings-alibaba-key" class="input-field" placeholder="sk-...">
+                        </div>
+                    </div>
+
+                    <button id="save-settings-btn" class="btn primary full-width" style="margin-top: 20px;">Save Settings</button>
+                </div>
+                
+                <div class="settings-section">
+                    <h3>AI Snippets</h3>
+                    <p class="text-muted" style="font-size: 12px; margin-bottom: 15px;">Customize snippets that appear when you type / in the AI textarea.</p>
+                    <div id="snippets-list" class="snippets-list"></div>
+                    <button id="add-snippet-btn" class="btn" style="margin-top: 10px; width: 100%;">
+                        <span class="material-icons" style="font-size: 16px; vertical-align: middle;">add</span>
+                        Add Snippet
+                    </button>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button id="save-snippets-btn" class="btn primary" style="flex: 1;">Save Snippets</button>
+                        <button id="reset-snippets-btn" class="btn" style="flex: 1;">Reset to Default</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Data Management</h3>
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <strong>Export All Notes</strong>
+                            <p>Download all your notes and to-dos as a JSON backup file.</p>
+                        </div>
+                        <button id="export-all-btn" class="btn btn-primary">
+                            <span class="material-icons">file_download</span>
+                            Export All
+                        </button>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <strong>Delete All Notes</strong>
+                            <p>Permanently delete all notes and to-dos. This action cannot be undone.</p>
+                        </div>
+                        <button id="delete-all-btn" class="btn btn-danger">
+                            <span class="material-icons">delete_forever</span>
+                            Delete All
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Load Quill.js and highlight.js before our script -->
+    <!-- AI Assistant Dock -->
+    <div id="ai-dock" class="ai-dock">
+        <div class="ai-dock-content">
+            <div class="ai-controls-row">
+                <select id="ai-model-select" class="ai-model-select" title="Select AI Model">
+                    <optgroup label="Google">
+                        <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Preview)</option>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                        <option value="gemini-1.0-pro">Gemini 1.0 Pro</option>
+                    </optgroup>
+                    <optgroup label="OpenAI">
+                        <option value="gpt-4o">GPT-4o</option>
+                        <option value="gpt-4o-mini">GPT-4o Mini</option>
+                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                    </optgroup>
+                    <optgroup label="Anthropic">
+                        <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet</option>
+                        <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+                        <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+                    </optgroup>
+                    <optgroup label="xAI">
+                        <option value="grok-beta">Grok Beta</option>
+                    </optgroup>
+                    <optgroup label="DeepSeek">
+                        <option value="deepseek-chat">DeepSeek V3</option>
+                        <option value="deepseek-coder">DeepSeek Coder</option>
+                    </optgroup>
+                    <optgroup label="Mistral AI">
+                        <option value="mistral-large-latest">Mistral Large</option>
+                        <option value="mistral-medium">Mistral Medium</option>
+                        <option value="mistral-small">Mistral Small</option>
+                        <option value="codestral-latest">Codestral</option>
+                    </optgroup>
+                </select>
+                <select id="ai-type-select" class="ai-model-select" title="Select Output Type">
+                    <option value="note">Note</option>
+                    <option value="todo">Todo List</option>
+                    <option value="both" selected>Note + Todo</option>
+                </select>
+                <button id="ai-generate-btn" class="ai-send-btn" title="Generate">
+                    <span class="material-icons">arrow_upward</span>
+                </button>
+            </div>
+            <div class="ai-prompt-container">
+                <textarea id="ai-prompt" class="ai-prompt-input" placeholder="Ask AI to write something... (Type / for snippets)" rows="3"></textarea>
+                <div id="ai-snippets-menu" class="snippets-menu hidden"></div>
+            </div>
+
+            <div id="ai-loading" class="hidden" style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-muted);">
+                <span class="material-icons spin" style="font-size: 14px;">refresh</span> Generating...
+            </div>
+            
+            <div id="ai-error" class="error-message hidden" style="color: var(--danger); margin-top: 5px; font-size: 12px;"></div>
+
+            <div id="ai-preview-section" class="hidden">
+                <div class="preview-header">
+                    <span class="preview-label">Preview</span>
+                    <div class="preview-actions">
+                        <button id="ai-cancel-btn" class="icon-btn small" title="Discard">
+                            <span class="material-icons">close</span>
+                        </button>
+                        <button id="ai-apply-btn" class="icon-btn small primary" title="Apply">
+                            <span class="material-icons">check</span>
+                        </button>
+                    </div>
+                </div>
+                <input type="text" id="ai-preview-title" class="preview-title-input" readonly>
+                <div id="ai-preview-content" class="preview-content-box"></div>
+            </div>
+
+            <div id="ai-todos-preview-section" class="hidden">
+                <div class="preview-header">
+                    <span class="preview-label">Generated Todos</span>
+                    <div class="preview-actions">
+                        <button id="ai-todos-cancel-btn" class="icon-btn small" title="Discard Todos">
+                            <span class="material-icons">close</span>
+                        </button>
+                        <button id="ai-todos-apply-btn" class="icon-btn small primary" title="Add Todos">
+                            <span class="material-icons">check</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="ai-todos-preview-list" class="preview-todos-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/highlight.min.js"></script>
+    <script src="js/quill.min.js"></script>
+    <script src="js/ai-providers.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
