@@ -66,10 +66,37 @@ const aiChatAttachBtn = document.getElementById('ai-chat-attach-btn');
 const aiChatFileInput = document.getElementById('ai-chat-file-input');
 const aiChatAttachments = document.getElementById('ai-chat-attachments');
 
+// Media Generation Elements
+const mediaGenerationModal = document.getElementById('media-generation-modal');
+const closeMediaModal = document.getElementById('close-media-modal');
+const mediaModalTitle = document.getElementById('media-modal-title');
+const mediaPreviewArea = document.getElementById('media-preview-area');
+const mediaLoading = document.getElementById('media-loading');
+const generatedImage = document.getElementById('generated-image');
+const generatedVideo = document.getElementById('generated-video');
+const mediaActions = document.getElementById('media-actions');
+const mediaPromptInput = document.getElementById('media-prompt-input');
+const imageOptions = document.getElementById('image-options');
+const videoOptions = document.getElementById('video-options');
+const imageSizeSelect = document.getElementById('image-size-select');
+const imageQualitySelect = document.getElementById('image-quality-select');
+const videoDurationSelect = document.getElementById('video-duration-select');
+const videoResolutionSelect = document.getElementById('video-resolution-select');
+const generateMediaBtn = document.getElementById('generate-media-btn');
+const downloadMediaBtn = document.getElementById('download-media-btn');
+const insertMediaBtn = document.getElementById('insert-media-btn');
+const regenerateMediaBtn = document.getElementById('regenerate-media-btn');
+const mediaProviderInfo = document.getElementById('media-provider-info');
+const mediaProviderText = document.getElementById('media-provider-text');
+
 // Chat State
 let chatHistory = [];
 let chatAttachedFiles = [];
 let isStreamingChat = false;
+
+// Media State
+let currentMediaType = 'image';
+let currentMediaUrl = null;
 
 // Default Snippets
 const DEFAULT_AI_SNIPPETS = [
@@ -1576,6 +1603,9 @@ if (aiGenerateBtn) {
         } else if (model.startsWith('qwen')) {
             provider = 'alibaba';
             apiKey = aiSettings.alibabaKey;
+        } else if (model.startsWith('banana')) {
+            provider = 'gemini';
+            apiKey = aiSettings.geminiKey;
         }
 
         if (!provider) {
@@ -1747,12 +1777,377 @@ function showAIError(msg) {
     aiError.classList.remove('hidden');
 }
 
+// --- Media Generation Logic ---
+
+// Open media generation modal
+function openMediaModal(type) {
+    currentMediaType = type;
+    mediaModalTitle.textContent = type === 'image' ? 'Generate Image' : 'Generate Video';
+    
+    // Show/hide appropriate options
+    if (type === 'image') {
+        imageOptions.classList.remove('hidden');
+        videoOptions.classList.add('hidden');
+    } else {
+        imageOptions.classList.add('hidden');
+        videoOptions.classList.remove('hidden');
+    }
+    
+    // Determine and display which provider will be used
+    let providerName = '';
+    let modelName = '';
+    
+    if (type === 'image') {
+        if (aiSettings.providers.openai && aiSettings.openaiKey) {
+            providerName = 'OpenAI';
+            modelName = 'DALL-E 3';
+        } else if (aiSettings.providers.gemini && aiSettings.geminiKey) {
+            providerName = 'Google';
+            modelName = 'Imagen 3 / Nano Banana';
+        }
+    } else {
+        if (aiSettings.providers.openai && aiSettings.openaiKey) {
+            providerName = 'OpenAI';
+            modelName = 'Sora';
+        } else if (aiSettings.providers.gemini && aiSettings.geminiKey) {
+            providerName = 'Google';
+            modelName = 'Veo 2';
+        }
+    }
+    
+    if (providerName && mediaProviderInfo && mediaProviderText) {
+        mediaProviderText.textContent = `Using: ${modelName} (${providerName})`;
+        mediaProviderInfo.style.display = 'flex';
+    } else if (mediaProviderInfo) {
+        mediaProviderInfo.style.display = 'none';
+    }
+    
+    // Reset preview area
+    mediaPreviewArea.classList.add('hidden');
+    mediaLoading.classList.add('hidden');
+    generatedImage.classList.add('hidden');
+    generatedVideo.classList.add('hidden');
+    mediaActions.classList.add('hidden');
+    mediaPromptInput.value = '';
+    currentMediaUrl = null;
+    
+    mediaGenerationModal.classList.add('show');
+}
+
+// Image generation function
+async function generateImage(provider, apiKey, prompt, size, quality) {
+    if (provider === 'openai') {
+        // DALL-E 3
+        const response = await fetch('https://api.openai.com/v1/images/generations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'dall-e-3',
+                prompt: prompt,
+                n: 1,
+                size: size,
+                quality: quality
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`OpenAI Error: ${error}`);
+        }
+        
+        const data = await response.json();
+        return data.data[0].url;
+    } else if (provider === 'gemini') {
+        // Google Imagen 3
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                instances: [{
+                    prompt: prompt
+                }],
+                parameters: {
+                    sampleCount: 1,
+                    aspectRatio: size === '1024x1024' ? '1:1' : (size === '1024x1792' ? '9:16' : '16:9'),
+                    negativePrompt: '',
+                    personGeneration: 'allow_adult'
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Gemini Error: ${error}`);
+        }
+        
+        const data = await response.json();
+        // Gemini returns base64 encoded image
+        return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+    }
+    
+    throw new Error('Unsupported provider for image generation');
+}
+
+// Video generation function
+async function generateVideo(provider, apiKey, prompt, duration, resolution) {
+    if (provider === 'openai') {
+        // OpenAI Sora
+        const response = await fetch('https://api.openai.com/v1/videos/generations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'sora-1.0',
+                prompt: prompt,
+                resolution: resolution,
+                duration: parseInt(duration)
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`OpenAI Sora Error: ${error}`);
+        }
+        
+        const data = await response.json();
+        // Sora might return a video URL or require polling
+        if (data.video_url) {
+            return data.video_url;
+        } else if (data.id) {
+            // Poll for completion
+            return await pollVideoCompletion('openai', apiKey, data.id);
+        }
+        throw new Error('Unexpected Sora response format');
+    } else if (provider === 'gemini') {
+        // Google Veo 2
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-2:predict?key=${apiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                instances: [{
+                    prompt: prompt
+                }],
+                parameters: {
+                    duration: parseInt(duration),
+                    resolution: resolution,
+                    aspectRatio: resolution === '1920x1080' ? '16:9' : '9:16'
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Gemini Veo 2 Error: ${error}`);
+        }
+        
+        const data = await response.json();
+        // Veo 2 might return base64 or URL
+        if (data.predictions[0].videoUrl) {
+            return data.predictions[0].videoUrl;
+        } else if (data.predictions[0].bytesBase64Encoded) {
+            return `data:video/mp4;base64,${data.predictions[0].bytesBase64Encoded}`;
+        }
+        throw new Error('Unexpected Veo 2 response format');
+    }
+    
+    throw new Error('Video generation is only supported with OpenAI (Sora) or Google (Veo 2)');
+}
+
+// Poll for video completion (for async video generation)
+async function pollVideoCompletion(provider, apiKey, videoId) {
+    const maxAttempts = 60; // 5 minutes max
+    const pollInterval = 5000; // 5 seconds
+    
+    for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        
+        let response;
+        if (provider === 'openai') {
+            response = await fetch(`https://api.openai.com/v1/videos/${videoId}`, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`
+                }
+            });
+        }
+        
+        if (response && response.ok) {
+            const data = await response.json();
+            if (data.status === 'completed' && data.video_url) {
+                return data.video_url;
+            } else if (data.status === 'failed') {
+                throw new Error('Video generation failed');
+            }
+        }
+    }
+    
+    throw new Error('Video generation timed out');
+}
+
+// Close media modal
+if (closeMediaModal) {
+    closeMediaModal.addEventListener('click', () => {
+        mediaGenerationModal.classList.remove('show');
+    });
+}
+
+// Close modal on outside click
+if (mediaGenerationModal) {
+    mediaGenerationModal.addEventListener('click', (e) => {
+        if (e.target === mediaGenerationModal) {
+            mediaGenerationModal.classList.remove('show');
+        }
+    });
+}
+
+// Generate media
+if (generateMediaBtn && mediaPromptInput) {
+    const generateMedia = async () => {
+        const prompt = mediaPromptInput.value.trim();
+        
+        if (!prompt) {
+            showNotification('Please enter a prompt', 'error');
+            return;
+        }
+        
+        let provider = '';
+        let apiKey = '';
+        
+        // Determine provider based on what's enabled and media type
+        if (currentMediaType === 'image') {
+            // For image generation, prioritize: OpenAI > Gemini > Nano Banana
+            if (aiSettings.providers.openai && aiSettings.openaiKey) {
+                provider = 'openai';
+                apiKey = aiSettings.openaiKey;
+            } else if (aiSettings.providers.gemini && aiSettings.geminiKey) {
+                provider = 'gemini';
+                apiKey = aiSettings.geminiKey;
+            }
+        } else {
+            // For video generation, prioritize: OpenAI (Sora) > Gemini (Veo 2)
+            if (aiSettings.providers.openai && aiSettings.openaiKey) {
+                provider = 'openai';
+                apiKey = aiSettings.openaiKey;
+            } else if (aiSettings.providers.gemini && aiSettings.geminiKey) {
+                provider = 'gemini';
+                apiKey = aiSettings.geminiKey;
+            }
+        }
+        
+        if (!apiKey) {
+            showNotification(`API Key for ${provider} is missing`, 'error');
+            return;
+        }
+        
+        // Show loading
+        mediaPreviewArea.classList.remove('hidden');
+        mediaLoading.classList.remove('hidden');
+        generatedImage.classList.add('hidden');
+        generatedVideo.classList.add('hidden');
+        mediaActions.classList.add('hidden');
+        generateMediaBtn.disabled = true;
+        
+        try {
+            if (currentMediaType === 'image') {
+                const size = imageSizeSelect.value;
+                const quality = imageQualitySelect.value;
+                
+                const url = await generateImage(provider, apiKey, prompt, size, quality);
+                
+                generatedImage.src = url;
+                generatedImage.classList.remove('hidden');
+                currentMediaUrl = url;
+                mediaActions.classList.remove('hidden');
+            } else {
+                // Video generation
+                const duration = videoDurationSelect.value;
+                const resolution = videoResolutionSelect.value;
+                
+                const url = await generateVideo(provider, apiKey, prompt, duration, resolution);
+                
+                generatedVideo.src = url;
+                generatedVideo.classList.remove('hidden');
+                currentMediaUrl = url;
+                mediaActions.classList.remove('hidden');
+            }
+            
+            mediaLoading.classList.add('hidden');
+        } catch (error) {
+            mediaLoading.classList.add('hidden');
+            showNotification('Generation failed: ' + error.message, 'error');
+        } finally {
+            generateMediaBtn.disabled = false;
+        }
+    };
+    
+    generateMediaBtn.addEventListener('click', generateMedia);
+    
+    mediaPromptInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            generateMedia();
+        }
+    });
+}
+
+// Regenerate media
+if (regenerateMediaBtn) {
+    regenerateMediaBtn.addEventListener('click', () => {
+        generateMediaBtn.click();
+    });
+}
+
+// Download media
+if (downloadMediaBtn) {
+    downloadMediaBtn.addEventListener('click', () => {
+        if (currentMediaUrl) {
+            const link = document.createElement('a');
+            link.href = currentMediaUrl;
+            link.download = `generated-${currentMediaType}-${Date.now()}.${currentMediaType === 'image' ? 'png' : 'mp4'}`;
+            link.click();
+            showNotification('Downloaded successfully', 'success');
+        }
+    });
+}
+
+// Insert media to note
+if (insertMediaBtn) {
+    insertMediaBtn.addEventListener('click', () => {
+        if (currentMediaUrl) {
+            const currentLength = quill.getLength();
+            const insertText = `\n\n[Generated ${currentMediaType}]\n${currentMediaUrl}\n`;
+            
+            quill.insertText(currentLength - 1, insertText);
+            updateActiveNote();
+            
+            showNotification('Media inserted to note', 'success');
+            mediaGenerationModal.classList.remove('show');
+        }
+    });
+}
+
 // --- Chat Mode Logic ---
 
 // Toggle UI based on output type
 if (aiTypeSelect) {
     aiTypeSelect.addEventListener('change', () => {
         const outputType = aiTypeSelect.value;
+        console.log('Output type selected:', outputType);
+        
+        // Handle media generation modes
+        if (outputType === 'image' || outputType === 'video') {
+            console.log('Opening media modal for:', outputType);
+            currentMediaType = outputType;
+            openMediaModal(outputType);
+            return;
+        }
         
         if (outputType === 'chat') {
             // Chat mode uses standard prompt but displays in note editor
@@ -1951,6 +2346,9 @@ if (aiGenerateBtn && aiPromptInput) {
         } else if (model.startsWith('qwen')) {
             provider = 'alibaba';
             apiKey = aiSettings.alibabaKey;
+        } else if (model.startsWith('banana')) {
+            provider = 'gemini';
+            apiKey = aiSettings.geminiKey;
         }
         
         if (!provider) {

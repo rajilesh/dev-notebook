@@ -345,6 +345,8 @@
                     <option value="note">Note</option>
                     <option value="todo">Todo List</option>
                     <option value="both">Note + Todo</option>
+                    <option value="image">Generate Image</option>
+                    <option value="video">Generate Video</option>
                 </select>
                 <button id="ai-generate-btn" class="ai-send-btn" title="Generate">
                     <span class="material-icons">arrow_upward</span>
@@ -416,6 +418,76 @@
                     </div>
                 </div>
                 <div id="ai-todos-preview-list" class="preview-todos-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Media Generation Modal -->
+    <div id="media-generation-modal" class="modal hidden">
+        <div class="modal-content media-modal-content">
+            <div class="modal-header">
+                <h3 id="media-modal-title">Generate Image</h3>
+                <button class="close-btn" id="close-media-modal">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body media-modal-body">
+                <div id="media-preview-area" class="media-preview-area hidden">
+                    <div id="media-loading" class="media-loading hidden">
+                        <span class="material-icons spin">refresh</span>
+                        <p>Generating...</p>
+                    </div>
+                    <img id="generated-image" class="generated-media hidden" alt="Generated content">
+                    <video id="generated-video" class="generated-media hidden" controls></video>
+                    <div class="media-actions hidden" id="media-actions">
+                        <button id="download-media-btn" class="btn primary">
+                            <span class="material-icons">download</span> Download
+                        </button>
+                        <button id="insert-media-btn" class="btn primary">
+                            <span class="material-icons">insert_photo</span> Insert to Note
+                        </button>
+                        <button id="regenerate-media-btn" class="btn secondary">
+                            <span class="material-icons">refresh</span> Regenerate
+                        </button>
+                    </div>
+                </div>
+                <div class="media-prompt-container">
+                    <div id="media-provider-info" class="media-provider-info" style="display: none;">
+                        <span class="material-icons">info</span>
+                        <span id="media-provider-text">Using: DALL-E 3</span>
+                    </div>
+                    <textarea id="media-prompt-input" class="media-prompt-input" placeholder="Describe what you want to generate..." rows="4"></textarea>
+                    <div class="media-options">
+                        <div class="media-option-group" id="image-options">
+                            <label>Size:</label>
+                            <select id="image-size-select" class="media-select">
+                                <option value="1024x1024">Square (1024x1024)</option>
+                                <option value="1792x1024">Landscape (1792x1024)</option>
+                                <option value="1024x1792">Portrait (1024x1792)</option>
+                            </select>
+                            <label>Quality:</label>
+                            <select id="image-quality-select" class="media-select">
+                                <option value="standard">Standard</option>
+                                <option value="hd">HD</option>
+                            </select>
+                        </div>
+                        <div class="media-option-group hidden" id="video-options">
+                            <label>Duration:</label>
+                            <select id="video-duration-select" class="media-select">
+                                <option value="5">5 seconds</option>
+                                <option value="10">10 seconds</option>
+                            </select>
+                            <label>Resolution:</label>
+                            <select id="video-resolution-select" class="media-select">
+                                <option value="720p">720p</option>
+                                <option value="1080p">1080p</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="generate-media-btn" class="btn primary large">
+                        <span class="material-icons">auto_awesome</span> Generate
+                    </button>
+                </div>
             </div>
         </div>
     </div>
