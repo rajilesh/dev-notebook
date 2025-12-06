@@ -2129,6 +2129,12 @@ if (aiPromptInput) {
 
 if (aiGenerateBtn) {
     aiGenerateBtn.addEventListener('click', async () => {
+        // Skip if in chat mode - handled by separate listener
+        const outputType = document.getElementById('ai-type-select').value;
+        if (outputType === 'chat') {
+            return;
+        }
+
         const model = aiModelSelect.value;
         const prompt = aiPromptInput.value.trim();
 
@@ -3184,9 +3190,6 @@ if (aiGenerateBtn && aiPromptInput) {
         // Show streaming indicator
         isStreamingChat = true;
         aiGenerateBtn.disabled = true;
-
-        // Add user message first
-        addChatMessage('user', userContent, chatAttachedFiles);
 
         // Add assistant header and prepare for streaming
         const startPos = quill.getLength();
