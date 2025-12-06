@@ -56,6 +56,21 @@ const aiTodosApplyBtn = document.getElementById('ai-todos-apply-btn');
 const aiTodosCancelBtn = document.getElementById('ai-todos-cancel-btn');
 const aiSnippetsMenu = document.getElementById('ai-snippets-menu');
 
+// Chat Mode Elements
+const aiTypeSelect = document.getElementById('ai-type-select');
+const aiChatContainer = document.getElementById('ai-chat-container');
+const aiChatMessages = document.getElementById('ai-chat-messages');
+const aiChatInput = document.getElementById('ai-chat-input');
+const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
+const aiChatAttachBtn = document.getElementById('ai-chat-attach-btn');
+const aiChatFileInput = document.getElementById('ai-chat-file-input');
+const aiChatAttachments = document.getElementById('ai-chat-attachments');
+
+// Chat State
+let chatHistory = [];
+let chatAttachedFiles = [];
+let isStreamingChat = false;
+
 // Default Snippets
 const DEFAULT_AI_SNIPPETS = [
     { trigger: '/reformat', text: 'Reformat this code with proper indentation and style', description: 'Reformat code' },
@@ -1676,17 +1691,34 @@ if (aiApplyBtn) {
     aiApplyBtn.addEventListener('click', () => {
         const title = aiPreviewSection.dataset.title;
         const content = aiPreviewSection.dataset.content;
+        const outputType = aiPreviewSection.dataset.outputType;
         
-        if (title) noteTitleEl.value = title;
-        if (content) {
-            quill.setText(content);
+        // In chat mode, always append
+        if (outputType === 'chat') {
+            if (content) {
+                const currentLength = quill.getLength();
+                
+                // Add separator if note has content
+                let separator = currentLength > 1 ? '\n\n' : '';
+                
+                // Insert at the end
+                quill.insertText(currentLength - 1, separator + content);
+            }
+            updateActiveNote();
+            showNotification('Chat appended to note!', 'success');
+        } else {
+            // For other modes, replace as normal
+            if (title) noteTitleEl.value = title;
+            if (content) {
+                quill.setText(content);
+            }
+            updateActiveNote();
+            showNotification('Note replaced successfully!', 'success');
         }
-        updateActiveNote();
         
         aiPromptInput.value = '';
         aiPreviewSection.classList.add('hidden');
         aiAppendBtn.classList.add('hidden');
-        showNotification('Note replaced successfully!', 'success');
     });
 }
 
@@ -1713,6 +1745,366 @@ if (aiAppendBtn) {
 function showAIError(msg) {
     aiError.textContent = msg;
     aiError.classList.remove('hidden');
+}
+
+// --- Chat Mode Logic ---
+
+// Toggle UI based on output type
+if (aiTypeSelect) {
+    aiTypeSelect.addEventListener('change', () => {
+        const outputType = aiTypeSelect.value;
+        
+        if (outputType === 'chat') {
+            // Chat mode uses standard prompt but displays in note editor
+            aiChatContainer.classList.add('hidden');
+            aiPreviewSection.classList.add('hidden');
+            aiTodosPreviewSection.classList.add('hidden');
+            aiLoading.classList.add('hidden');
+            aiError.classList.add('hidden');
+            
+            // Show file attachment controls in prompt area
+            if (aiChatAttachBtn) aiChatAttachBtn.style.display = 'inline-flex';
+        } else {
+            // Standard modes
+            aiChatContainer.classList.add('hidden');
+            if (aiChatAttachBtn) aiChatAttachBtn.style.display = 'none';
+        }
+    });
+}
+
+// Chat file attachment
+if (aiChatAttachBtn && aiChatFileInput) {
+    aiChatAttachBtn.addEventListener('click', () => {
+        aiChatFileInput.click();
+    });
+
+    aiChatFileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        
+        for (const file of files) {
+            if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+                try {
+                    const encoded = await encodeMediaFile(file);
+                    chatAttachedFiles.push(encoded);
+                    renderChatAttachments();
+                } catch (error) {
+                    showNotification('Failed to attach file: ' + file.name, 'error');
+                }
+            } else {
+                showNotification('Only images and videos are supported', 'error');
+            }
+        }
+        
+        // Clear input
+        aiChatFileInput.value = '';
+    });
+}
+
+// Render chat attachments preview
+function renderChatAttachments() {
+    if (!aiChatAttachments) return;
+    
+    if (chatAttachedFiles.length === 0) {
+        aiChatAttachments.classList.add('hidden');
+        aiChatAttachments.innerHTML = '';
+        return;
+    }
+    
+    aiChatAttachments.classList.remove('hidden');
+    aiChatAttachments.innerHTML = chatAttachedFiles.map((file, index) => {
+        const src = `data:${file.mimeType};base64,${file.data}`;
+        const mediaTag = file.type === 'image' 
+            ? `<img src="${src}" alt="${file.name}">` 
+            : `<video src="${src}"></video>`;
+        
+        return `
+            <div class="chat-attachment-item">
+                ${mediaTag}
+                <span class="chat-attachment-remove material-icons" data-index="${index}">close</span>
+            </div>
+        `;
+    }).join('');
+    
+    // Add remove handlers
+    aiChatAttachments.querySelectorAll('.chat-attachment-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const index = parseInt(e.target.dataset.index);
+            chatAttachedFiles.splice(index, 1);
+            renderChatAttachments();
+        });
+    });
+}
+
+// Add message to note editor (chat mode)
+function addChatMessage(role, content, attachments = []) {
+    const currentLength = quill.getLength();
+    let insertText = '';
+    
+    // Add separator if note has content
+    if (currentLength > 1) {
+        insertText += '\n\n';
+    }
+    
+    // Add role header
+    if (role === 'user') {
+        insertText += '👤 You:\n';
+    } else {
+        insertText += '🤖 Assistant:\n';
+    }
+    
+    // Add attachments info
+    if (attachments && attachments.length > 0) {
+        insertText += `[${attachments.length} attachment(s)]\n`;
+    }
+    
+    // Add content
+    if (content) {
+        insertText += content + '\n';
+    }
+    
+    // Insert into editor
+    const insertPosition = quill.getLength() - 1;
+    quill.insertText(insertPosition, insertText);
+    
+    // Auto-save
+    updateActiveNote();
+    
+    // Return last position for streaming updates
+    return insertPosition + insertText.length;
+}
+
+// Format chat content (basic markdown support)
+function formatChatContent(text) {
+    if (!text) return '';
+    
+    // Code blocks
+    text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `<pre><code class="language-${lang || 'text'}">${escapeHtml(code.trim())}</code></pre>`;
+    });
+    
+    // Inline code
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Bold
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Italic
+    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    
+    // Line breaks
+    text = text.replace(/\n/g, '<br>');
+    
+    return text;
+}
+
+// Add streaming indicator in note
+function addStreamingIndicator() {
+    const currentLength = quill.getLength();
+    let insertText = '';
+    
+    if (currentLength > 1) {
+        insertText += '\n\n';
+    }
+    
+    insertText += '🤖 Assistant:\n...';
+    
+    const insertPosition = quill.getLength() - 1;
+    quill.insertText(insertPosition, insertText);
+    
+    return insertPosition + insertText.length - 3; // Return position before '...'
+}
+
+// Send chat message
+if (aiGenerateBtn && aiPromptInput) {
+    const sendChatMessage = async () => {
+        const message = aiPromptInput.value.trim();
+        if (!message && chatAttachedFiles.length === 0) return;
+        if (isStreamingChat) return;
+        
+        const model = aiModelSelect.value;
+        
+        // Determine provider
+        let provider = '';
+        let apiKey = '';
+        
+        if (model.startsWith('gpt')) {
+            provider = 'openai';
+            apiKey = aiSettings.openaiKey;
+        } else if (model.startsWith('gemini') || model.startsWith('gemma')) {
+            provider = 'gemini';
+            apiKey = aiSettings.geminiKey;
+        } else if (model.startsWith('claude')) {
+            provider = 'anthropic';
+            apiKey = aiSettings.anthropicKey;
+        } else if (model.startsWith('grok')) {
+            provider = 'xai';
+            apiKey = aiSettings.xaiKey;
+        } else if (model.startsWith('deepseek')) {
+            provider = 'deepseek';
+            apiKey = aiSettings.deepseekKey;
+        } else if (model.startsWith('mistral') || model.startsWith('codestral')) {
+            provider = 'mistral';
+            apiKey = aiSettings.mistralKey;
+        } else if (model.startsWith('nvidia')) {
+            provider = 'nvidia';
+            apiKey = aiSettings.nvidiaKey;
+        } else if (model.startsWith('qwen')) {
+            provider = 'alibaba';
+            apiKey = aiSettings.alibabaKey;
+        }
+        
+        if (!provider) {
+            showNotification('Provider not supported for streaming', 'error');
+            return;
+        }
+        
+        if (!apiKey) {
+            showNotification(`API Key for ${provider} is missing`, 'error');
+            return;
+        }
+        
+        // Ensure we have an active note
+        if (!activeNoteId) {
+            // Create a new note for chat
+            noteTitleEl.value = 'AI Chat - ' + new Date().toLocaleString();
+            addNote();
+        }
+        
+        // Add user message
+        const userAttachments = [...chatAttachedFiles];
+        addChatMessage('user', message, userAttachments);
+        
+        // Prepare message content (multimodal if attachments)
+        let userContent;
+        if (userAttachments.length > 0) {
+            // Multimodal message
+            userContent = [];
+            
+            // Add attachments first
+            for (const file of userAttachments) {
+                if (provider === 'openai') {
+                    if (file.type === 'image') {
+                        userContent.push({
+                            type: 'image_url',
+                            image_url: { url: `data:${file.mimeType};base64,${file.data}` }
+                        });
+                    }
+                } else if (provider === 'gemini') {
+                    userContent.push({
+                        inline_data: {
+                            mime_type: file.mimeType,
+                            data: file.data
+                        }
+                    });
+                } else if (provider === 'anthropic') {
+                    if (file.type === 'image') {
+                        userContent.push({
+                            type: 'image',
+                            source: {
+                                type: 'base64',
+                                media_type: file.mimeType,
+                                data: file.data
+                            }
+                        });
+                    }
+                }
+            }
+            
+            // Add text
+            if (message) {
+                if (provider === 'gemini') {
+                    userContent.push({ text: message });
+                } else {
+                    userContent.push({ type: 'text', text: message });
+                }
+            }
+        } else {
+            userContent = message;
+        }
+        
+        // Add to history
+        chatHistory.push({ role: 'user', content: userContent });
+        
+        // Clear input and attachments
+        aiPromptInput.value = '';
+        chatAttachedFiles = [];
+        renderChatAttachments();
+        
+        // Show streaming indicator
+        const streamStartPos = addStreamingIndicator();
+        isStreamingChat = true;
+        aiGenerateBtn.disabled = true;
+        
+        let assistantContent = '';
+        let hasStartedStreaming = false;
+        
+        try {
+            await callAIProviderStreaming(
+                provider,
+                apiKey,
+                model,
+                chatHistory,
+                // onChunk
+                (chunk, fullText) => {
+                    if (!hasStartedStreaming) {
+                        // Remove '...' indicator
+                        quill.deleteText(streamStartPos, 3);
+                        hasStartedStreaming = true;
+                    }
+                    
+                    // Replace text from stream start position
+                    const currentText = quill.getText(streamStartPos, quill.getLength() - streamStartPos);
+                    const diff = fullText.length - (currentText.length - 1); // -1 for newline
+                    
+                    if (diff > 0) {
+                        // Append new text
+                        quill.insertText(quill.getLength() - 1, chunk);
+                    }
+                    
+                    assistantContent = fullText;
+                    updateActiveNote();
+                },
+                // onComplete
+                (fullText) => {
+                    chatHistory.push({ role: 'assistant', content: fullText });
+                    isStreamingChat = false;
+                    aiGenerateBtn.disabled = false;
+                    updateActiveNote();
+                },
+                // onError
+                (error) => {
+                    // Remove indicator
+                    if (!hasStartedStreaming) {
+                        quill.deleteText(streamStartPos - 15, quill.getLength() - streamStartPos + 15);
+                    }
+                    showNotification('Chat error: ' + error.message, 'error');
+                    isStreamingChat = false;
+                    aiGenerateBtn.disabled = false;
+                }
+            );
+        } catch (error) {
+            showNotification('Chat error: ' + error.message, 'error');
+            isStreamingChat = false;
+            aiGenerateBtn.disabled = false;
+        }
+    };
+    
+    // Add to existing generate button click handler
+    const originalGenerateHandler = aiGenerateBtn.onclick;
+    aiGenerateBtn.addEventListener('click', async (e) => {
+        const outputType = aiTypeSelect.value;
+        if (outputType === 'chat') {
+            e.stopImmediatePropagation();
+            sendChatMessage();
+        }
+    }, true);
+}
+
+// Clear chat history
+function clearChatHistory() {
+    chatHistory = [];
+    chatAttachedFiles = [];
+    renderChatAttachments();
 }
 
 // --- AI Modal Drag Logic Removed (Fixed Bottom Layout) ---

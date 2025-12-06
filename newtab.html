@@ -304,6 +304,10 @@
     <div id="ai-dock" class="ai-dock">
         <div class="ai-dock-content">
             <div class="ai-controls-row">
+                <input type="file" id="ai-chat-file-input" accept="image/*,video/*" multiple hidden>
+                <button id="ai-chat-attach-btn" class="icon-btn small" title="Attach Image/Video">
+                    <span class="material-icons">attach_file</span>
+                </button>
                 <select id="ai-model-select" class="ai-model-select" title="Select AI Model">
                     <optgroup label="Google">
                         <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Preview)</option>
@@ -337,17 +341,41 @@
                     </optgroup>
                 </select>
                 <select id="ai-type-select" class="ai-model-select" title="Select Output Type">
+                    <option value="chat" selected>Chat</option>
                     <option value="note">Note</option>
                     <option value="todo">Todo List</option>
-                    <option value="both" selected>Note + Todo</option>
+                    <option value="both">Note + Todo</option>
                 </select>
                 <button id="ai-generate-btn" class="ai-send-btn" title="Generate">
                     <span class="material-icons">arrow_upward</span>
                 </button>
             </div>
             <div class="ai-prompt-container">
+                <div id="ai-chat-attachments" class="ai-chat-attachments hidden"></div>
                 <textarea id="ai-prompt" class="ai-prompt-input" placeholder="Ask AI to write something... (Type / for snippets)" rows="3"></textarea>
                 <div id="ai-snippets-menu" class="snippets-menu hidden"></div>
+            </div>
+
+            <!-- Chat Mode UI -->
+            <div id="ai-chat-container" class="ai-chat-container hidden">
+                <div id="ai-chat-messages" class="ai-chat-messages">
+                    <button id="ai-chat-clear-btn" class="chat-clear-btn icon-btn small hidden" title="Clear Chat History">
+                        <span class="material-icons">delete_sweep</span>
+                    </button>
+                </div>
+                <div class="ai-chat-input-wrapper">
+                    <div id="ai-chat-attachments" class="ai-chat-attachments hidden"></div>
+                    <div class="ai-chat-controls">
+                        <input type="file" id="ai-chat-file-input" accept="image/*,video/*" multiple hidden>
+                        <button id="ai-chat-attach-btn" class="icon-btn small" title="Attach Image/Video">
+                            <span class="material-icons">attach_file</span>
+                        </button>
+                        <textarea id="ai-chat-input" class="ai-chat-input" placeholder="Type your message... (Type / for snippets)" rows="1"></textarea>
+                        <button id="ai-chat-send-btn" class="icon-btn small" title="Send Message">
+                            <span class="material-icons">send</span>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div id="ai-loading" class="hidden" style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-muted);">
