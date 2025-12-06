@@ -29,6 +29,9 @@ const clearAllTodosBtn = document.getElementById('clear-all-todos-btn');
 const todoListEl = document.getElementById('todo-list');
 const newTodoInput = document.getElementById('new-todo-input');
 const addTodoBtn = document.getElementById('add-todo-btn');
+const todoPrevBtn = document.getElementById('todo-prev-btn');
+const todoNextBtn = document.getElementById('todo-next-btn');
+const todoPageInfo = document.getElementById('todo-page-info');
 
 // Settings Elements
 const settingsBtn = document.getElementById('settings-btn');
@@ -48,7 +51,6 @@ const aiPreviewSection = document.getElementById('ai-preview-section');
 const aiPreviewTitle = document.getElementById('ai-preview-title');
 const aiPreviewContent = document.getElementById('ai-preview-content');
 const aiApplyBtn = document.getElementById('ai-apply-btn');
-const aiAppendBtn = document.getElementById('ai-append-btn');
 const aiCancelBtn = document.getElementById('ai-cancel-btn');
 const aiTodosPreviewSection = document.getElementById('ai-todos-preview-section');
 const aiTodosPreviewList = document.getElementById('ai-todos-preview-list');
@@ -301,12 +303,14 @@ let notes = [];
 let activeNoteId = null;
 let todos = [];
 let currentTheme = 'system'; // 'light', 'dark', 'system'
+let currentTodoPage = 1;
+const todosPerPage = 15;
 
 // --- Initialization ---
 // Wait for both DOM, Quill, and highlight.js to load
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, checking for Quill and highlight.js...');
-    
+
     const checkLibraries = setInterval(() => {
         if (typeof Quill !== 'undefined' && typeof hljs !== 'undefined') {
             clearInterval(checkLibraries);
@@ -317,26 +321,105 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 100);
 });
 
+// Helper function to highlight all code blocks
+function highlightCodeBlocks() {
+    const codeBlocks = document.querySelectorAll('.ql-syntax');
+    codeBlocks.forEach((block) => {
+        // Skip if already highlighted and content hasn't changed
+        const currentContent = block.textContent;
+        if (block.dataset.lastContent === currentContent && block.classList.contains('hljs')) {
+            return;
+        }
+
+        // Store current content
+        block.dataset.lastContent = currentContent;
+
+        // Remove previous highlighting classes
+        block.removeAttribute('data-highlighted');
+        block.className = 'ql-syntax';
+
+        // Apply new highlighting
+        try {
+            hljs.highlightElement(block);
+        } catch (e) {
+            console.error('Highlighting error:', e);
+        }
+    });
+}
+
 function initializeQuill() {
-    // Initialize Quill with comprehensive toolbar
+    // Make highlight.js available globally for Quill
+    window.hljs = hljs;
+
+    // Configure highlight.js for syntax highlighting
+    hljs.configure({
+        languages: ['javascript', 'python', 'java', 'c', 'cpp', 'csharp', 'ruby', 'go',
+            'rust', 'swift', 'kotlin', 'php', 'html', 'css', 'scss', 'sql',
+            'bash', 'shell', 'powershell', 'typescript', 'json', 'xml', 'yaml',
+            'markdown', 'dockerfile', 'nginx', 'apache', 'r', 'matlab', 'perl']
+    });
+
+    // Initialize Quill with comprehensive toolbar and code support
     quill = new Quill('#editor-content', {
         theme: 'snow',
         modules: {
-            toolbar: [
-                [{ 'header': [1, 2, 3, false] }],
-                ['bold', 'italic', 'underline', 'strike'],
-                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-                [{ 'indent': '-1'}, { 'indent': '+1' }],
-                ['blockquote', 'code-block'],
-                [{ 'color': [] }, { 'background': [] }],
-                ['link', 'image'],
-                ['clean']
-            ],
-            syntax: true
+            toolbar: {
+                container: [
+                    // Headers and font size
+                    [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+                    [{ 'font': [] }],
+                    [{ 'size': ['small', false, 'large', 'huge'] }],
+
+                    // Text formatting
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ 'color': [] }, { 'background': [] }],
+                    [{ 'script': 'sub' }, { 'script': 'super' }],
+
+                    // Lists and alignment
+                    [{ 'list': 'ordered' }, { 'list': 'bullet' }, { 'list': 'check' }],
+                    [{ 'indent': '-1' }, { 'indent': '+1' }],
+                    [{ 'align': [] }],
+
+                    // Blocks
+                    ['blockquote', 'code-block'],
+
+                    // Media
+                    ['link', 'image', 'video'],
+
+                    // Clear formatting
+                    ['clean']
+                ],
+                handlers: {
+                    'code-block': function () {
+                        const range = this.quill.getSelection();
+                        if (range) {
+                            const format = this.quill.getFormat(range);
+                            this.quill.format('code-block', !format['code-block']);
+                        }
+                    }
+                }
+            },
+            syntax: true  // Enable syntax highlighting module
         },
-        placeholder: 'Start typing...',
+        placeholder: 'Start typing... Use code-block for syntax highlighting',
     });
-    
+
+    // Initial highlight
+    setTimeout(() => {
+        highlightCodeBlocks();
+    }, 100);
+
+    // Note: Highlighting is handled by scanAndFormatCodeBlocks in the text-change listener below
+    // No need for separate highlighting listener here to avoid blinking
+
+
+    // Also highlight when editor gains focus (for pasted content)
+    quill.on('selection-change', function (range, oldRange, source) {
+        if (range) {
+            highlightCodeBlocks();
+        }
+    });
+
     // Listen for text changes with debouncing
     let saveTimeout;
     quill.on('text-change', () => {
@@ -347,7 +430,7 @@ function initializeQuill() {
             }
         }, 500);
     });
-    
+
     // Enable image paste
     quill.root.addEventListener('paste', (e) => {
         const clipboardData = e.clipboardData;
@@ -369,6 +452,262 @@ function initializeQuill() {
             }
         }
     });
+
+    // Add keyboard shortcuts for markdown-style formatting
+    quill.keyboard.addBinding({
+        key: 'B',
+        shortKey: true,
+        handler: function (range, context) {
+            this.quill.format('bold', !context.format.bold);
+        }
+    });
+
+    quill.keyboard.addBinding({
+        key: 'I',
+        shortKey: true,
+        handler: function (range, context) {
+            this.quill.format('italic', !context.format.italic);
+        }
+    });
+
+    quill.keyboard.addBinding({
+        key: 'U',
+        shortKey: true,
+        handler: function (range, context) {
+            this.quill.format('underline', !context.format.underline);
+        }
+    });
+
+    quill.keyboard.addBinding({
+        key: 'E',
+        shortKey: true,
+        shiftKey: true,
+        handler: function (range, context) {
+            this.quill.format('code-block', !context.format['code-block']);
+        }
+    });
+
+    // Smart auto-formatting with code detection
+    let autoFormatTimeout;
+    quill.on('text-change', function (delta, oldDelta, source) {
+        if (source === 'user') {
+            scanAndFormatCodeBlocks(quill);
+
+            // Normal magic formatting debounce
+            clearTimeout(autoFormatTimeout);
+            autoFormatTimeout = setTimeout(() => {
+                handleMagicFormatting(quill);
+            }, 500);
+        }
+    });
+}
+
+// Global scanner for markdown code blocks
+function scanAndFormatCodeBlocks(quillInstance) {
+    const fullText = quillInstance.getText();
+    // Improved regex to capture code blocks more reliably
+    // Matches: ```lang (optional) + newline(s) + content + newline(s) + ```
+    // Also handles cases with spaces/tabs around backticks
+    const codeBlockRegex = /```\s*([a-zA-Z0-9+\-#]*)\s*[\r\n]+([\s\S]*?)[\r\n]+\s*```/g;
+
+    const matches = [];
+    let match;
+    while ((match = codeBlockRegex.exec(fullText)) !== null) {
+        matches.push({
+            index: match.index,
+            length: match[0].length,
+            lang: match[1] || '',
+            content: match[2],
+            fullMatch: match[0]
+        });
+    }
+
+    if (matches.length > 0) {
+        // Process in reverse order to avoid index invalidation
+        matches.reverse().forEach(match => {
+            // Re-verify text in case of race conditions
+            // (Simple check since we are synchronous mostly)
+            const currentTextLen = quillInstance.getLength();
+            if (match.index + match.length <= currentTextLen) {
+                quillInstance.deleteText(match.index, match.length, 'silent');
+                quillInstance.insertText(match.index, match.content, 'silent');
+                quillInstance.formatLine(match.index, match.content.length, 'code-block', true, 'silent');
+            }
+        });
+
+        setTimeout(highlightCodeBlocks, 100);
+    }
+}
+
+function handleMagicFormatting(quillInstance) {
+    const selection = quillInstance.getSelection();
+    if (!selection) return;
+
+    // Get the current line content
+    const [line, offset] = quillInstance.getLine(selection.index);
+    if (!line) return;
+
+    const text = line.domNode.textContent;
+    const trimmedText = text.trim();
+    const lineStart = quillInstance.getIndex(line);
+
+    // --- 1. JSON Detection & Formatting ---
+    // Check if it looks like a JSON object or array
+    if ((trimmedText.startsWith('{') && trimmedText.endsWith('}')) ||
+        (trimmedText.startsWith('[') && trimmedText.endsWith(']'))) {
+        try {
+            const parsed = JSON.parse(trimmedText);
+            // Basic validation: ensure it's not just "[]" or "{}" or a simple number
+            if ((typeof parsed === 'object' && parsed !== null) &&
+                (Object.keys(parsed).length > 0 || Array.isArray(parsed))) {
+
+                const formattedJSON = JSON.stringify(parsed, null, 2);
+                replaceWithCodeBlock(quillInstance, lineStart, text.length, formattedJSON, 'json');
+                return;
+            }
+        } catch (e) {
+            // Not valid JSON
+        }
+    }
+
+    // --- 2. HTML Detection & Formatting ---
+    // Look for standard HTML tags or full structures
+    const isHTML = /<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>|<([a-z][a-z0-9]*)\b[^>]*\/>/i.test(trimmedText);
+    const hasTags = /<[a-z][\s\S]*>/i.test(trimmedText) && (trimmedText.includes('</') || trimmedText.includes('/>'));
+
+    if ((isHTML || hasTags) && trimmedText.length > 5) {
+        const formattedHTML = formatHTML(trimmedText);
+        replaceWithCodeBlock(quillInstance, lineStart, text.length, formattedHTML, 'html');
+        return;
+    }
+
+    // --- 3. Explicit Code Fence (```lang) ---
+    const codeFenceMatch = text.match(/^```(\w+)?$/);
+    if (codeFenceMatch && offset === text.length) {
+        const lang = codeFenceMatch[1] || '';
+        quillInstance.deleteText(lineStart, text.length);
+
+        // Enter code block mode
+        quillInstance.insertText(lineStart, '\n', 'user');
+        quillInstance.formatLine(lineStart, 1, 'code-block', true, 'user');
+
+        // Move selection to start of line
+        quillInstance.setSelection(lineStart, 0, 'silent');
+        return;
+    }
+
+    // --- 4. Programming Language Detection ---
+    // We only trigger this if the line is substantial (prevent false positives on short text)
+    if (trimmedText.length > 10) {
+        const patterns = [
+            // JS/TS
+            { lang: 'javascript', regex: /^(const|let|var|function|class|import|export|if|for|while|return|async|await|=>)\s/ },
+            { lang: 'javascript', regex: /console\.(log|error|warn|info)\(/ },
+            // Python
+            { lang: 'python', regex: /^(def|class|import|from|if|elif|else:|for|while|try:|except:|print)\s/ },
+            // SQL
+            { lang: 'sql', regex: /^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TABLE|FROM|WHERE|JOIN)\s/i },
+            // Bash
+            { lang: 'bash', regex: /^(npm|pip|git|docker|sudo|apt|brew|cd|ls|echo|cat)\s/ },
+            // PHP
+            { lang: 'php', regex: /^(\$|function|class|public|private|protected|namespace|echo)\s/ },
+            // CSS
+            { lang: 'css', regex: /^([.#]?[a-zA-Z0-9_-]+)\s*\{/ }
+        ];
+
+        for (const pattern of patterns) {
+            if (pattern.regex.test(trimmedText)) {
+                // Check if already in code block
+                const format = quillInstance.getFormat(lineStart);
+                if (!format['code-block']) {
+                    replaceWithCodeBlock(quillInstance, lineStart, text.length, text, pattern.lang);
+                    return;
+                }
+            }
+        }
+    }
+
+    // --- 5. Markdown Shortcuts ---
+    handleMarkdownShortcuts(quillInstance, text, lineStart, offset);
+}
+
+// Helper: Replace text range with a formatted code block
+function replaceWithCodeBlock(quill, index, length, content, language) {
+    // Delete original text
+    quill.deleteText(index, length);
+
+    // Insert new content
+    // We update content with newline if needed, but usually just proper formatting
+    quill.insertText(index, content);
+
+    // Apply code-block format to the inserted range
+    quill.formatLine(index, content.length, 'code-block', true);
+
+    // Trigger highlight
+    setTimeout(highlightCodeBlocks, 10);
+}
+
+// Helper: Simple HTML Formatter
+function formatHTML(html) {
+    let formatted = '';
+    const pad = '  ';
+    let indent = 0;
+    // Split by tags but keep delimiters
+    const tokens = html.split(/(<[^>]+>)/).filter(s => s.trim().length > 0);
+
+    tokens.forEach(token => {
+        let padding = '';
+        if (token.match(/^<\//)) indent = Math.max(0, indent - 1);
+
+        for (let i = 0; i < indent; i++) padding += pad;
+
+        // Don't modify content inside tags too much, just indentation
+        formatted += padding + token + '\n';
+
+        // Increase indent for opening tags that aren't self-closing or void
+        if (token.match(/^<[a-z]/i) &&
+            !token.match(/\/>$/) &&
+            !token.match(/^(<br|<hr|<img|<input|<meta|<link)/i) &&
+            !token.match(/^<\//)) {
+            indent++;
+        }
+    });
+    return formatted.trim();
+}
+
+function handleMarkdownShortcuts(quill, text, lineStart, offset) {
+    // Headers (#)
+    const headerMatch = text.match(/^(#{1,6})\s/);
+    if (headerMatch && offset === headerMatch[0].length) {
+        quill.deleteText(lineStart, headerMatch[0].length);
+        quill.formatLine(lineStart, 1, 'header', headerMatch[1].length);
+    }
+
+    // Blockquote (>)
+    if (text.match(/^>\s/) && offset === 2) {
+        quill.deleteText(lineStart, 2);
+        quill.formatLine(lineStart, 1, 'blockquote', true);
+    }
+
+    // Bullet List (-, *)
+    if (text.match(/^[-*]\s/) && offset === 2) {
+        quill.deleteText(lineStart, 2);
+        quill.formatLine(lineStart, 1, 'list', 'bullet');
+    }
+
+    // Ordered List (1.)
+    const orderedMatch = text.match(/^1\.\s/);
+    if (orderedMatch && offset === 3) {
+        quill.deleteText(lineStart, 3);
+        quill.formatLine(lineStart, 1, 'list', 'ordered');
+    }
+
+    // Task List ([ ])
+    const taskMatch = text.match(/^\[\s?\]\s/);
+    if (taskMatch && offset === taskMatch[0].length) {
+        quill.deleteText(lineStart, taskMatch[0].length);
+        quill.formatLine(lineStart, 1, 'list', 'check');
+    }
 }
 
 async function init() {
@@ -376,7 +715,7 @@ async function init() {
     notes = data.notes || [];
     todos = data.todos || [];
     currentTheme = data.theme || 'system';
-    
+
     // Initialize Notes - Always create a new note when opening a new tab
     notes.sort((a, b) => b.updatedAt - a.updatedAt);
     renderNotesList();
@@ -395,26 +734,26 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local') {
         let shouldUpdateNotes = false;
         let shouldUpdateTodos = false;
-        
+
         if (changes.notes) {
             notes = changes.notes.newValue || [];
             shouldUpdateNotes = true;
         }
-        
+
         if (changes.todos) {
             todos = changes.todos.newValue || [];
             shouldUpdateTodos = true;
         }
-        
+
         if (changes.theme) {
             currentTheme = changes.theme.newValue || 'system';
             applyTheme(currentTheme);
         }
-        
+
         // Update UI if data changed
         if (shouldUpdateNotes) {
             renderNotesList();
-            
+
             // If the active note still exists, refresh it
             if (activeNoteId && notes.find(n => n.id === activeNoteId)) {
                 const note = notes.find(n => n.id === activeNoteId);
@@ -445,7 +784,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
                 }
             }
         }
-        
+
         if (shouldUpdateTodos) {
             renderTodoList();
         }
@@ -461,10 +800,10 @@ function showNotification(message, type = 'info', duration = 3000) {
     if (notificationTimeout) {
         clearTimeout(notificationTimeout);
     }
-    
+
     notificationEl.textContent = message;
     notificationEl.className = 'notification show ' + type;
-    
+
     notificationTimeout = setTimeout(() => {
         notificationEl.className = 'notification';
     }, duration);
@@ -512,40 +851,40 @@ function createNewNote() {
         createdAt: Date.now(),
         updatedAt: Date.now()
     };
-    
+
     notes.unshift(newNote);
     activeNoteId = newNote.id;
-    
+
     saveNotes();
     renderNotesList();
-    
+
     // Reset editor
     noteTitleEl.value = '';
     if (quill) quill.setText('');
-    
+
     // Focus title
     noteTitleEl.focus();
 }
 
 function updateActiveNote() {
     if (!activeNoteId) return;
-    
+
     const noteIndex = notes.findIndex(n => n.id === activeNoteId);
     if (noteIndex === -1) return;
-    
+
     const updatedNote = {
         ...notes[noteIndex],
         title: noteTitleEl.value,
         body: quill.getContents(), // Save as Delta object
         updatedAt: Date.now()
     };
-    
+
     // Update in place (do not move to top)
     notes[noteIndex] = updatedNote;
-    
+
     saveNotes();
     renderNotesList();
-    
+
     statusEl.textContent = 'Saved';
     statusEl.style.opacity = '1';
     setTimeout(() => {
@@ -555,11 +894,11 @@ function updateActiveNote() {
 
 function deleteActiveNote() {
     if (!activeNoteId) return;
-    
+
     if (confirm('Are you sure you want to delete this note?')) {
         notes = notes.filter(n => n.id !== activeNoteId);
         saveNotes();
-        
+
         if (notes.length > 0) {
             setActiveNote(notes[0].id);
         } else {
@@ -583,10 +922,10 @@ function setActiveNote(id) {
 
     const note = notes.find(n => n.id === id);
     if (!note) return;
-    
+
     activeNoteId = id;
     noteTitleEl.value = note.title;
-    
+
     // Handle different body formats (legacy text vs Delta)
     try {
         if (note.body && typeof note.body === 'object' && note.body.ops) {
@@ -602,9 +941,14 @@ function setActiveNote(id) {
         console.error('Error setting content:', e);
         quill.setText(note.body || '');
     }
-    
+
+    // Trigger syntax highlighting after content is loaded
+    setTimeout(() => {
+        highlightCodeBlocks();
+    }, 100);
+
     renderNotesList();
-    
+
     // Close sidebar on mobile
     if (window.innerWidth <= 768) {
         appContainer.classList.remove('sidebar-open');
@@ -619,7 +963,7 @@ function saveNotes() {
 
 function renderNotesList() {
     notesListEl.innerHTML = '';
-    
+
     // Filter notes based on search
     const searchTerm = searchInput.value.toLowerCase();
     const filteredNotes = notes.filter(note => {
@@ -633,17 +977,17 @@ function renderNotesList() {
         }
         return title.includes(searchTerm) || bodyText.includes(searchTerm);
     });
-    
+
     filteredNotes.forEach(note => {
         const li = document.createElement('li');
         li.className = 'note-item';
         if (note.id === activeNoteId) {
             li.classList.add('active');
         }
-        
+
         const title = note.title || 'Untitled Note';
         const date = new Date(note.updatedAt).toLocaleDateString();
-        
+
         // Preview text
         let preview = 'No content';
         if (note.body) {
@@ -654,13 +998,13 @@ function renderNotesList() {
             }
         }
         if (preview.length >= 50) preview += '...';
-        
+
         li.innerHTML = `
             <div class="note-title">${escapeHtml(title)}</div>
             <div class="note-preview">${escapeHtml(preview)}</div>
             <div class="note-date">${date}</div>
         `;
-        
+
         li.addEventListener('click', () => setActiveNote(note.id));
         notesListEl.appendChild(li);
     });
@@ -679,14 +1023,14 @@ function escapeHtml(text) {
 // --- Todo Management ---
 function createTodo(text) {
     if (!text) return;
-    
+
     const newTodo = {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
         text: text,
         completed: false,
         createdAt: Date.now()
     };
-    
+
     todos.unshift(newTodo);
     saveTodos();
     renderTodoList();
@@ -703,6 +1047,9 @@ function toggleTodo(id) {
     const todo = todos.find(t => t.id === id);
     if (todo) {
         todo.completed = !todo.completed;
+        if (todo.completed) {
+            todo.completedAt = Date.now();
+        }
         saveTodos();
         renderTodoList();
     }
@@ -719,7 +1066,7 @@ function deleteTodo(id) {
 
 function clearAllTodos() {
     if (todos.length === 0) return;
-    
+
     if (confirm('Are you sure you want to clear all todos?')) {
         todos = [];
         saveTodos();
@@ -734,30 +1081,149 @@ function saveTodos() {
 
 function renderTodoList() {
     todoListEl.innerHTML = '';
-    
-    todos.forEach(todo => {
+
+    // Sort: active todos first, then completed by completion date
+    const sortedTodos = [...todos].sort((a, b) => {
+        if (a.completed === b.completed) {
+            return (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt);
+        }
+        return a.completed ? 1 : -1;
+    });
+
+    // Pagination
+    const totalPages = Math.ceil(sortedTodos.length / todosPerPage);
+    currentTodoPage = Math.min(currentTodoPage, Math.max(1, totalPages));
+    const startIndex = (currentTodoPage - 1) * todosPerPage;
+    const endIndex = startIndex + todosPerPage;
+    const paginatedTodos = sortedTodos.slice(startIndex, endIndex);
+
+    // Update pagination info
+    todoPageInfo.textContent = `${currentTodoPage} / ${totalPages || 1}`;
+    todoPrevBtn.disabled = currentTodoPage <= 1;
+    todoNextBtn.disabled = currentTodoPage >= totalPages;
+
+    // Render todos
+    paginatedTodos.forEach(todo => {
         const li = document.createElement('li');
         li.className = `todo-item ${todo.completed ? 'completed' : ''}`;
-        
+
+        let dateInfo = '';
+        if (todo.completed && todo.completedAt) {
+            const date = new Date(todo.completedAt);
+            dateInfo = `<small style="color: var(--text-muted); font-size: 0.8em; margin-left: 8px;">✓ ${date.toLocaleDateString()}</small>`;
+        }
+
         li.innerHTML = `
             <input type="checkbox" ${todo.completed ? 'checked' : ''}>
-            <span>${escapeHtml(todo.text)}</span>
+            <span>${escapeHtml(todo.text)}${dateInfo}</span>
             <button class="delete-todo-btn">
                 <span class="material-icons" style="font-size: 16px;">close</span>
             </button>
         `;
-        
+
         const checkbox = li.querySelector('input');
         checkbox.addEventListener('change', () => toggleTodo(todo.id));
-        
+
         const deleteBtn = li.querySelector('.delete-todo-btn');
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             deleteTodo(todo.id);
         });
-        
+
         todoListEl.appendChild(li);
     });
+}
+
+function renderHistoryList() {
+    historyTodoList.innerHTML = '';
+
+    // Calculate pagination
+    const totalPages = Math.ceil(todoHistory.length / historyItemsPerPage);
+    const startIndex = (currentHistoryPage - 1) * historyItemsPerPage;
+    const endIndex = startIndex + historyItemsPerPage;
+    const paginatedHistory = todoHistory.slice(startIndex, endIndex);
+
+    // Render history items
+    paginatedHistory.forEach(todo => {
+        const li = document.createElement('li');
+        li.className = 'todo-item completed';
+
+        const completedDate = new Date(todo.completedAt);
+        const dateStr = completedDate.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: completedDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+        });
+
+        li.innerHTML = `
+            <span class="material-icons" style="color: var(--accent); font-size: 18px;">check_circle</span>
+            <div style="flex: 1;">
+                <div>${escapeHtml(todo.text)}</div>
+                <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 2px;">${dateStr}</div>
+            </div>
+            <button class="delete-todo-btn" title="Remove from history">
+                <span class="material-icons" style="font-size: 16px;">close</span>
+            </button>
+        `;
+
+        const deleteBtn = li.querySelector('.delete-todo-btn');
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteHistoryTodo(todo.id);
+        });
+
+        historyTodoList.appendChild(li);
+    });
+
+    // Update pagination controls
+    updateHistoryPagination(totalPages);
+}
+
+function updateHistoryPagination(totalPages) {
+    historyPageInfo.textContent = `${currentHistoryPage} / ${Math.max(1, totalPages)}`;
+    historyPrevBtn.disabled = currentHistoryPage <= 1;
+    historyNextBtn.disabled = currentHistoryPage >= totalPages;
+
+    if (todoHistory.length === 0) {
+        historyTodoList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No completed todos yet</div>';
+    }
+}
+
+function deleteHistoryTodo(id) {
+    if (confirm('Remove this todo from history?')) {
+        todoHistory = todoHistory.filter(t => t.id !== id);
+
+        // Adjust current page if needed
+        const totalPages = Math.ceil(todoHistory.length / historyItemsPerPage);
+        if (currentHistoryPage > totalPages && totalPages > 0) {
+            currentHistoryPage = totalPages;
+        }
+
+        saveTodos();
+        renderHistoryList();
+        showNotification('Todo removed from history', 'success');
+    }
+}
+
+function switchTodoTab(tab) {
+    // Update tab buttons
+    todoTabs.forEach(btn => {
+        if (btn.dataset.tab === tab) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // Show/hide sections
+    if (tab === 'active') {
+        activeTodosSection.classList.add('active');
+        historyTodosSection.classList.remove('active');
+    } else {
+        activeTodosSection.classList.remove('active');
+        historyTodosSection.classList.add('active');
+        renderHistoryList();
+    }
 }
 
 // --- Theme Management ---
@@ -812,6 +1278,22 @@ clearAllTodosBtn.addEventListener('click', clearAllTodos);
 addTodoBtn.addEventListener('click', addTodo);
 newTodoInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') addTodo();
+});
+
+// Todo pagination
+todoPrevBtn.addEventListener('click', () => {
+    if (currentTodoPage > 1) {
+        currentTodoPage--;
+        renderTodoList();
+    }
+});
+
+todoNextBtn.addEventListener('click', () => {
+    const totalPages = Math.ceil(todos.length / todosPerPage);
+    if (currentTodoPage < totalPages) {
+        currentTodoPage++;
+        renderTodoList();
+    }
 });
 
 themeToggleBtn.addEventListener('click', toggleTheme);
@@ -875,7 +1357,7 @@ document.body.addEventListener('dragover', (e) => {
 document.body.addEventListener('drop', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const files = e.dataTransfer.files;
     if (files.length > 0) {
         const file = files[0];
@@ -893,10 +1375,10 @@ async function shareCurrentNote() {
         showNotification('No note selected to share', 'error');
         return;
     }
-    
+
     const note = notes.find(n => n.id === activeNoteId);
     if (!note) return;
-    
+
     // Extract text from Quill Delta format
     let bodyText = '';
     if (note.body && typeof note.body === 'object' && note.body.ops) {
@@ -904,9 +1386,9 @@ async function shareCurrentNote() {
     } else if (typeof note.body === 'string') {
         bodyText = note.body;
     }
-    
+
     const shareText = `${note.title ? note.title + '\n\n' : ''}${bodyText}`;
-    
+
     // Try using Web Share API if available
     if (navigator.share) {
         try {
@@ -960,10 +1442,10 @@ function exportSingleNote() {
         showNotification('No note selected to export', 'error');
         return;
     }
-    
+
     const note = notes.find(n => n.id === activeNoteId);
     if (!note) return;
-    
+
     const data = {
         note: note,
         exportDate: new Date().toISOString(),
@@ -1006,7 +1488,7 @@ function importNotebookFile(file) {
     reader.onload = async (e) => {
         try {
             const data = JSON.parse(e.target.result);
-            
+
             // Basic validation - check for single note or multiple notes/todos
             if (!data.notes && !data.todos && !data.note) {
                 showNotification('Invalid notebook file', 'error');
@@ -1052,13 +1534,13 @@ function importNotebookFile(file) {
                 todos = [...todos, ...newTodos];
                 importedTodosCount = newTodos.length;
             }
-            
+
             await chrome.storage.local.set({ notes, todos });
-            
+
             // Re-initialize UI
             renderNotesList();
             renderTodoList();
-            
+
             // If single note was imported, switch to it immediately
             if (newNoteId) {
                 setActiveNote(newNoteId);
@@ -1087,7 +1569,7 @@ async function loadAISettings() {
     if (data.aiSettings) {
         // Merge saved settings with defaults (handling new providers structure)
         aiSettings = { ...aiSettings, ...data.aiSettings };
-        
+
         // Ensure providers object exists if migrating from old settings
         if (!aiSettings.providers) {
             aiSettings.providers = {
@@ -1157,7 +1639,7 @@ async function loadSnippets() {
     } else {
         AI_SNIPPETS = [...DEFAULT_AI_SNIPPETS];
     }
-    
+
     // Update UI
     renderSnippetsList();
 }
@@ -1165,7 +1647,7 @@ async function loadSnippets() {
 // Render snippets list in settings
 function renderSnippetsList() {
     if (!snippetsList) return;
-    
+
     snippetsList.innerHTML = AI_SNIPPETS.map((snippet, index) => `
         <div class="snippet-editor-item" data-index="${index}">
             <input type="text" class="snippet-trigger" value="${snippet.trigger}" placeholder="/trigger">
@@ -1176,7 +1658,7 @@ function renderSnippetsList() {
             </button>
         </div>
     `).join('');
-    
+
     // Add event listeners for remove buttons
     snippetsList.querySelectorAll('.remove-snippet-btn').forEach((btn, index) => {
         btn.addEventListener('click', () => removeSnippet(index));
@@ -1206,25 +1688,25 @@ function removeSnippet(index) {
 // Save Snippets
 async function saveSnippets() {
     if (!snippetsList) return;
-    
+
     const snippets = [];
     const items = snippetsList.querySelectorAll('.snippet-editor-item');
-    
+
     items.forEach(item => {
         const trigger = item.querySelector('.snippet-trigger').value.trim();
         const text = item.querySelector('.snippet-text').value.trim();
         const description = item.querySelector('.snippet-description').value.trim();
-        
+
         if (trigger && text && description) {
             snippets.push({ trigger, text, description });
         }
     });
-    
+
     if (snippets.length === 0) {
         showNotification('Please add at least one valid snippet', 'error');
         return;
     }
-    
+
     AI_SNIPPETS = snippets;
     await chrome.storage.local.set({ aiSnippets: snippets });
     renderSnippetsList();
@@ -1353,7 +1835,7 @@ if (saveSettingsBtn) {
         aiSettings.nvidiaKey = settingsNvidiaKey.value.trim();
         aiSettings.alibabaKey = settingsAlibabaKey.value.trim();
         aiSettings.systemInstruction = systemInstructionEl.value.trim();
-        
+
         await chrome.storage.local.set({ aiSettings });
         updateModelDropdown();
         showNotification('Settings saved successfully!', 'success');
@@ -1395,7 +1877,7 @@ if (aiCancelBtn) {
 if (aiTodosApplyBtn) {
     aiTodosApplyBtn.addEventListener('click', () => {
         const todosJson = aiTodosPreviewSection.dataset.todos;
-        
+
         if (todosJson) {
             try {
                 const generatedTodos = JSON.parse(todosJson);
@@ -1410,7 +1892,7 @@ if (aiTodosApplyBtn) {
                 console.error('Failed to parse todos:', e);
             }
         }
-        
+
         aiTodosPreviewSection.classList.add('hidden');
         aiTodosPreviewSection.dataset.todos = '';
         aiPromptInput.value = '';
@@ -1430,7 +1912,7 @@ if (aiPromptInput) {
 
     // Show snippets menu
     const showSnippetsMenu = (filter = '') => {
-        filteredSnippets = AI_SNIPPETS.filter(snippet => 
+        filteredSnippets = AI_SNIPPETS.filter(snippet =>
             snippet.trigger.toLowerCase().includes(filter.toLowerCase()) ||
             snippet.text.toLowerCase().includes(filter.toLowerCase()) ||
             snippet.description.toLowerCase().includes(filter.toLowerCase())
@@ -1464,10 +1946,10 @@ if (aiPromptInput) {
         const cursorPos = aiPromptInput.selectionStart;
         const text = aiPromptInput.value;
         const lastSlashIndex = text.lastIndexOf('/', cursorPos);
-        
+
         const beforeSlash = text.substring(0, lastSlashIndex);
         const afterCursor = text.substring(cursorPos);
-        
+
         aiPromptInput.value = beforeSlash + snippet.text + afterCursor;
         const newCursorPos = beforeSlash.length + snippet.text.length;
         aiPromptInput.setSelectionRange(newCursorPos, newCursorPos);
@@ -1480,7 +1962,7 @@ if (aiPromptInput) {
         const cursorPos = aiPromptInput.selectionStart;
         const text = aiPromptInput.value;
         const lastSlashIndex = text.lastIndexOf('/', cursorPos);
-        
+
         if (lastSlashIndex !== -1 && lastSlashIndex === cursorPos - 1) {
             // Just typed /
             showSnippetsMenu('');
@@ -1507,7 +1989,7 @@ if (aiPromptInput) {
         }
 
         // Snippets menu is visible
-        switch(e.key) {
+        switch (e.key) {
             case 'ArrowDown':
                 e.preventDefault();
                 selectedSnippetIndex = Math.min(selectedSnippetIndex + 1, filteredSnippets.length - 1);
@@ -1568,11 +2050,11 @@ if (aiGenerateBtn) {
     aiGenerateBtn.addEventListener('click', async () => {
         const model = aiModelSelect.value;
         const prompt = aiPromptInput.value.trim();
-        
+
         // Determine provider and key
         let provider = '';
         let apiKey = '';
-        
+
         if (model.startsWith('gpt') || model.startsWith('text-embedding')) {
             provider = 'openai';
             apiKey = aiSettings.openaiKey;
@@ -1636,76 +2118,143 @@ if (aiGenerateBtn) {
         try {
             const outputType = document.getElementById('ai-type-select').value;
             let baseInstruction = aiSettings.systemInstruction || "You are a helpful assistant.";
-            
-            let formatInstruction = "";
-            if (outputType === 'todo') {
-                formatInstruction = " Please provide the response as a JSON object with a 'todos' field containing an array of task strings. Do not include title or content fields.";
-            } else if (outputType === 'both') {
-                formatInstruction = " Please provide the response in JSON format with 'title', 'content' (Markdown paragraphs), and a 'todos' field (array of strings).";
-            } else {
-                formatInstruction = " Please provide the response in JSON format with 'title' and 'content' (Markdown paragraphs) fields.";
-            }
 
-            const systemInstruction = baseInstruction + formatInstruction;
-            const result = await callAIProvider(provider, apiKey, model, prompt, systemInstruction);
-            
-            // Parse result (expecting JSON with title and content, or just text)
-            let title = 'AI Generated Note';
-            let content = result;
-            let generatedTodos = [];
-            let isJson = false;
+            // Handle note mode with real-time streaming
+            if (outputType === 'note') {
+                const formatInstruction = " Please provide well-formatted content with a brief title on the first line if appropriate. Use Markdown formatting including code blocks with language tags.";
+                const systemInstruction = baseInstruction + formatInstruction;
 
-            // Try to parse as JSON if the AI returned JSON
-            try {
-                // Clean up markdown code blocks if present
-                const jsonStr = result.replace(/\`\`\`json\n?|\n?\`\`\`/g, '');
-                const parsed = JSON.parse(jsonStr);
-                isJson = true;
-                if (parsed.title) title = parsed.title;
-                if (parsed.content) content = parsed.content;
-                if (parsed.todos && Array.isArray(parsed.todos)) generatedTodos = parsed.todos;
-            } catch (e) {
-                // Not JSON, use first line as title if short
-                const lines = result.split('\n');
-                if (lines.length > 0 && lines[0].length < 50) {
-                    title = lines[0];
-                    content = lines.slice(1).join('\n');
-                }
-            }
-
-            // Show todos in separate section if generated
-            if (generatedTodos.length > 0) {
-                aiTodosPreviewList.innerHTML = generatedTodos.map((task, i) => 
-                    `<div>${i + 1}. ${escapeHtml(task)}</div>`
-                ).join('');
-                aiTodosPreviewSection.dataset.todos = JSON.stringify(generatedTodos);
-                aiTodosPreviewSection.classList.remove('hidden');
-            } else {
-                aiTodosPreviewSection.classList.add('hidden');
-            }
-
-            // Show note preview if not todo-only mode
-            if (outputType !== 'todo') {
-                aiPreviewTitle.value = title;
-                aiPreviewContent.innerText = content; 
-                
-                // Store for application
-                aiPreviewSection.dataset.title = title;
-                aiPreviewSection.dataset.content = content;
-                aiPreviewSection.dataset.outputType = outputType;
-
-                // Show append button if there's an existing note with content
-                if (activeNoteId && quill.getText().trim().length > 0) {
-                    aiAppendBtn.classList.remove('hidden');
-                    aiApplyBtn.title = 'Replace Note';
-                } else {
-                    aiAppendBtn.classList.add('hidden');
-                    aiApplyBtn.title = 'Apply';
+                // Ensure we have an active note
+                if (!activeNoteId) {
+                    noteTitleEl.value = 'AI Generated Note';
+                    addNote();
                 }
 
-                aiPreviewSection.classList.remove('hidden');
+                // Prepare for streaming
+                const startPosition = quill.getLength();
+                const separator = startPosition > 1 ? '\n\n' : '';
+                let streamedContent = '';
+                let insertPosition = startPosition - 1;
+
+                // Insert separator if needed
+                if (separator) {
+                    quill.insertText(insertPosition, separator);
+                    insertPosition += separator.length;
+                }
+
+                // Stream content in real-time
+                let buffer = ''; // Buffer to accumulate text for parsing
+
+                await callAIProviderStreaming(
+                    provider,
+                    apiKey,
+                    model,
+                    [{ role: 'user', content: prompt }],
+                    // onChunk - called for each piece of streamed text
+                    (chunk) => {
+                        buffer += chunk;
+
+                        // Process complete lines for better markdown parsing
+                        const lines = buffer.split('\n');
+
+                        // Keep the last incomplete line in buffer
+                        if (!chunk.includes('\n')) {
+                            return; // Wait for more content
+                        }
+
+                        // Process all complete lines except the last
+                        const completeLines = lines.slice(0, -1);
+                        buffer = lines[lines.length - 1];
+
+                        completeLines.forEach((line, idx) => {
+                            insertPosition = insertMarkdownLine(quill, insertPosition, line);
+                            if (idx < completeLines.length - 1 || buffer === '') {
+                                insertPosition = insertMarkdownLine(quill, insertPosition, '\n');
+                            }
+                        });
+
+                        // Scroll to bottom
+                        quill.setSelection(insertPosition, 0);
+                    },
+                    // onComplete - called when streaming finishes
+                    (fullText) => {
+                        // Apply code formatting to the streamed content
+                        setTimeout(() => {
+                            scanAndFormatCodeBlocks(quill);
+                            setTimeout(() => {
+                                highlightCodeBlocks();
+                            }, 150);
+                        }, 100);
+
+                        updateActiveNote();
+                        showNotification('Note added successfully!', 'success');
+                        aiPromptInput.value = '';
+                    },
+                    // onError
+                    (error) => {
+                        showAIError(error.message || 'Streaming failed');
+                    }
+                );
             } else {
-                aiPreviewSection.classList.add('hidden');
+                // Todo and Both modes use regular call for JSON parsing
+                let formatInstruction = "";
+                if (outputType === 'todo') {
+                    formatInstruction = " Please provide the response as a JSON object with a 'todos' field containing an array of task strings. Do not include title or content fields.";
+                } else if (outputType === 'both') {
+                    formatInstruction = " Please provide the response in JSON format with 'title', 'content' (Markdown paragraphs), and a 'todos' field (array of strings).";
+                }
+
+                const systemInstruction = baseInstruction + formatInstruction;
+                const result = await callAIProvider(provider, apiKey, model, prompt, systemInstruction);
+
+                let title = '';
+                let content = result;
+                let generatedTodos = [];
+
+                // Try to parse JSON  
+                try {
+                    const jsonStr = result.replace(/```json\n?|\n?```/g, '');
+                    const parsed = JSON.parse(jsonStr);
+                    if (parsed.title) title = parsed.title;
+                    if (parsed.content) content = parsed.content;
+                    if (parsed.todos && Array.isArray(parsed.todos)) generatedTodos = parsed.todos;
+                } catch (e) {
+                    // Not JSON, use first line as title if short
+                    const lines = result.split('\n');
+                    if (lines.length > 0 && lines[0].length < 50) {
+                        title = lines[0];
+                        content = lines.slice(1).join('\n');
+                    }
+                }
+
+                if (outputType === 'todo') {
+                    // Show todo preview only
+                    aiPreviewSection.classList.add('hidden');
+
+                    if (generatedTodos.length > 0) {
+                        aiTodosPreviewList.innerHTML = generatedTodos.map((task, i) =>
+                            `<div>${i + 1}. ${escapeHtml(task)}</div>`
+                        ).join('');
+                        aiTodosPreviewSection.dataset.todos = JSON.stringify(generatedTodos);
+                        aiTodosPreviewSection.classList.remove('hidden');
+                    } else {
+                        aiTodosPreviewSection.classList.add('hidden');
+                        showNotification('No todos were generated', 'error');
+                    }
+                } else if (outputType === 'both') {
+                    // Stream note directly + show todo preview
+                    streamNoteToEditor(title, content);
+
+                    if (generatedTodos.length > 0) {
+                        aiTodosPreviewList.innerHTML = generatedTodos.map((task, i) =>
+                            `<div>${i + 1}. ${escapeHtml(task)}</div>`
+                        ).join('');
+                        aiTodosPreviewSection.dataset.todos = JSON.stringify(generatedTodos);
+                        aiTodosPreviewSection.classList.remove('hidden');
+                    } else {
+                        aiTodosPreviewSection.classList.add('hidden');
+                    }
+                }
             }
         } catch (error) {
             showAIError(error.message);
@@ -1717,60 +2266,83 @@ if (aiGenerateBtn) {
     });
 }
 
+// Stream note directly to editor (no preview)
+function streamNoteToEditor(title, content) {
+    // Ensure we have an active note
+    if (!activeNoteId) {
+        // Create a new note
+        const newTitle = title || 'AI Generated Note';
+        noteTitleEl.value = newTitle;
+        addNote();
+    } else if (title && !noteTitleEl.value.trim()) {
+        // Update title if current note has no title
+        noteTitleEl.value = title;
+    }
+
+    // Insert content at the end of the editor
+    if (content) {
+        const currentLength = quill.getLength();
+        const separator = currentLength > 1 ? '\n\n' : '';
+
+        quill.insertText(currentLength - 1, separator + content);
+
+        // Apply code formatting after insertion
+        setTimeout(() => {
+            scanAndFormatCodeBlocks(quill);
+            setTimeout(() => {
+                highlightCodeBlocks();
+            }, 150);
+        }, 100);
+
+        updateActiveNote();
+        showNotification('Note added successfully!', 'success');
+    }
+
+    // Clear prompt
+    aiPromptInput.value = '';
+}
+
+// Apply button handler for preview mode
 if (aiApplyBtn) {
     aiApplyBtn.addEventListener('click', () => {
         const title = aiPreviewSection.dataset.title;
         const content = aiPreviewSection.dataset.content;
         const outputType = aiPreviewSection.dataset.outputType;
-        
-        // In chat mode, always append
-        if (outputType === 'chat') {
-            if (content) {
-                const currentLength = quill.getLength();
-                
-                // Add separator if note has content
-                let separator = currentLength > 1 ? '\n\n' : '';
-                
-                // Insert at the end
-                quill.insertText(currentLength - 1, separator + content);
-            }
-            updateActiveNote();
-            showNotification('Chat appended to note!', 'success');
-        } else {
-            // For other modes, replace as normal
-            if (title) noteTitleEl.value = title;
-            if (content) {
-                quill.setText(content);
-            }
-            updateActiveNote();
-            showNotification('Note replaced successfully!', 'success');
+
+        // Always append content
+        if (content) {
+            const currentLength = quill.getLength();
+
+            // Add separator if note has content
+            let separator = currentLength > 1 ? '\n\n' : '';
+
+            // Insert at the end
+            quill.insertText(currentLength - 1, separator + content);
         }
-        
+
+        // Only update title if it's a new note or empty title
+        if (title && (!activeNoteId || !noteTitleEl.value.trim())) {
+            noteTitleEl.value = title;
+        }
+
+        // Trigger magic formatting for AI content
+        setTimeout(() => {
+            scanAndFormatCodeBlocks(quill);
+            // Also trigger syntax highlighting
+            setTimeout(() => {
+                highlightCodeBlocks();
+            }, 150);
+        }, 100);
+
+        updateActiveNote();
+        showNotification('Content appended to note!', 'success');
+
         aiPromptInput.value = '';
         aiPreviewSection.classList.add('hidden');
-        aiAppendBtn.classList.add('hidden');
     });
 }
 
-if (aiAppendBtn) {
-    aiAppendBtn.addEventListener('click', () => {
-        const content = aiPreviewSection.dataset.content;
-        
-        if (content) {
-            const currentText = quill.getText();
-            const currentLength = quill.getLength();
-            
-            // Insert at the end with double newline separation
-            quill.insertText(currentLength - 1, '\n\n' + content);
-        }
-        updateActiveNote();
-        
-        aiPromptInput.value = '';
-        aiPreviewSection.classList.add('hidden');
-        aiAppendBtn.classList.add('hidden');
-        showNotification('Content appended successfully!', 'success');
-    });
-}
+
 
 function showAIError(msg) {
     aiError.textContent = msg;
@@ -1783,7 +2355,7 @@ function showAIError(msg) {
 function openMediaModal(type) {
     currentMediaType = type;
     mediaModalTitle.textContent = type === 'image' ? 'Generate Image' : 'Generate Video';
-    
+
     // Show/hide appropriate options
     if (type === 'image') {
         imageOptions.classList.remove('hidden');
@@ -1792,11 +2364,11 @@ function openMediaModal(type) {
         imageOptions.classList.add('hidden');
         videoOptions.classList.remove('hidden');
     }
-    
+
     // Determine and display which provider will be used
     let providerName = '';
     let modelName = '';
-    
+
     if (type === 'image') {
         if (aiSettings.providers.openai && aiSettings.openaiKey) {
             providerName = 'OpenAI';
@@ -1814,14 +2386,14 @@ function openMediaModal(type) {
             modelName = 'Veo 2';
         }
     }
-    
+
     if (providerName && mediaProviderInfo && mediaProviderText) {
         mediaProviderText.textContent = `Using: ${modelName} (${providerName})`;
         mediaProviderInfo.style.display = 'flex';
     } else if (mediaProviderInfo) {
         mediaProviderInfo.style.display = 'none';
     }
-    
+
     // Reset preview area
     mediaPreviewArea.classList.add('hidden');
     mediaLoading.classList.add('hidden');
@@ -1830,7 +2402,7 @@ function openMediaModal(type) {
     mediaActions.classList.add('hidden');
     mediaPromptInput.value = '';
     currentMediaUrl = null;
-    
+
     mediaGenerationModal.classList.add('show');
 }
 
@@ -1852,12 +2424,12 @@ async function generateImage(provider, apiKey, prompt, size, quality) {
                 quality: quality
             })
         });
-        
+
         if (!response.ok) {
             const error = await response.text();
             throw new Error(`OpenAI Error: ${error}`);
         }
-        
+
         const data = await response.json();
         return data.data[0].url;
     } else if (provider === 'gemini') {
@@ -1879,17 +2451,17 @@ async function generateImage(provider, apiKey, prompt, size, quality) {
                 }
             })
         });
-        
+
         if (!response.ok) {
             const error = await response.text();
             throw new Error(`Gemini Error: ${error}`);
         }
-        
+
         const data = await response.json();
         // Gemini returns base64 encoded image
         return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
     }
-    
+
     throw new Error('Unsupported provider for image generation');
 }
 
@@ -1910,12 +2482,12 @@ async function generateVideo(provider, apiKey, prompt, duration, resolution) {
                 duration: parseInt(duration)
             })
         });
-        
+
         if (!response.ok) {
             const error = await response.text();
             throw new Error(`OpenAI Sora Error: ${error}`);
         }
-        
+
         const data = await response.json();
         // Sora might return a video URL or require polling
         if (data.video_url) {
@@ -1943,12 +2515,12 @@ async function generateVideo(provider, apiKey, prompt, duration, resolution) {
                 }
             })
         });
-        
+
         if (!response.ok) {
             const error = await response.text();
             throw new Error(`Gemini Veo 2 Error: ${error}`);
         }
-        
+
         const data = await response.json();
         // Veo 2 might return base64 or URL
         if (data.predictions[0].videoUrl) {
@@ -1958,7 +2530,7 @@ async function generateVideo(provider, apiKey, prompt, duration, resolution) {
         }
         throw new Error('Unexpected Veo 2 response format');
     }
-    
+
     throw new Error('Video generation is only supported with OpenAI (Sora) or Google (Veo 2)');
 }
 
@@ -1966,10 +2538,10 @@ async function generateVideo(provider, apiKey, prompt, duration, resolution) {
 async function pollVideoCompletion(provider, apiKey, videoId) {
     const maxAttempts = 60; // 5 minutes max
     const pollInterval = 5000; // 5 seconds
-    
+
     for (let i = 0; i < maxAttempts; i++) {
         await new Promise(resolve => setTimeout(resolve, pollInterval));
-        
+
         let response;
         if (provider === 'openai') {
             response = await fetch(`https://api.openai.com/v1/videos/${videoId}`, {
@@ -1978,7 +2550,7 @@ async function pollVideoCompletion(provider, apiKey, videoId) {
                 }
             });
         }
-        
+
         if (response && response.ok) {
             const data = await response.json();
             if (data.status === 'completed' && data.video_url) {
@@ -1988,7 +2560,7 @@ async function pollVideoCompletion(provider, apiKey, videoId) {
             }
         }
     }
-    
+
     throw new Error('Video generation timed out');
 }
 
@@ -2012,15 +2584,15 @@ if (mediaGenerationModal) {
 if (generateMediaBtn && mediaPromptInput) {
     const generateMedia = async () => {
         const prompt = mediaPromptInput.value.trim();
-        
+
         if (!prompt) {
             showNotification('Please enter a prompt', 'error');
             return;
         }
-        
+
         let provider = '';
         let apiKey = '';
-        
+
         // Determine provider based on what's enabled and media type
         if (currentMediaType === 'image') {
             // For image generation, prioritize: OpenAI > Gemini > Nano Banana
@@ -2041,12 +2613,12 @@ if (generateMediaBtn && mediaPromptInput) {
                 apiKey = aiSettings.geminiKey;
             }
         }
-        
+
         if (!apiKey) {
             showNotification(`API Key for ${provider} is missing`, 'error');
             return;
         }
-        
+
         // Show loading
         mediaPreviewArea.classList.remove('hidden');
         mediaLoading.classList.remove('hidden');
@@ -2054,14 +2626,14 @@ if (generateMediaBtn && mediaPromptInput) {
         generatedVideo.classList.add('hidden');
         mediaActions.classList.add('hidden');
         generateMediaBtn.disabled = true;
-        
+
         try {
             if (currentMediaType === 'image') {
                 const size = imageSizeSelect.value;
                 const quality = imageQualitySelect.value;
-                
+
                 const url = await generateImage(provider, apiKey, prompt, size, quality);
-                
+
                 generatedImage.src = url;
                 generatedImage.classList.remove('hidden');
                 currentMediaUrl = url;
@@ -2070,15 +2642,15 @@ if (generateMediaBtn && mediaPromptInput) {
                 // Video generation
                 const duration = videoDurationSelect.value;
                 const resolution = videoResolutionSelect.value;
-                
+
                 const url = await generateVideo(provider, apiKey, prompt, duration, resolution);
-                
+
                 generatedVideo.src = url;
                 generatedVideo.classList.remove('hidden');
                 currentMediaUrl = url;
                 mediaActions.classList.remove('hidden');
             }
-            
+
             mediaLoading.classList.add('hidden');
         } catch (error) {
             mediaLoading.classList.add('hidden');
@@ -2087,9 +2659,9 @@ if (generateMediaBtn && mediaPromptInput) {
             generateMediaBtn.disabled = false;
         }
     };
-    
+
     generateMediaBtn.addEventListener('click', generateMedia);
-    
+
     mediaPromptInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
             generateMedia();
@@ -2123,10 +2695,17 @@ if (insertMediaBtn) {
         if (currentMediaUrl) {
             const currentLength = quill.getLength();
             const insertText = `\n\n[Generated ${currentMediaType}]\n${currentMediaUrl}\n`;
-            
+
             quill.insertText(currentLength - 1, insertText);
+
+            // Trigger code formatting after inserting media
+            setTimeout(() => {
+                scanAndFormatCodeBlocks(quill);
+                highlightCodeBlocks();
+            }, 100);
+
             updateActiveNote();
-            
+
             showNotification('Media inserted to note', 'success');
             mediaGenerationModal.classList.remove('show');
         }
@@ -2140,7 +2719,7 @@ if (aiTypeSelect) {
     aiTypeSelect.addEventListener('change', () => {
         const outputType = aiTypeSelect.value;
         console.log('Output type selected:', outputType);
-        
+
         // Handle media generation modes
         if (outputType === 'image' || outputType === 'video') {
             console.log('Opening media modal for:', outputType);
@@ -2148,7 +2727,7 @@ if (aiTypeSelect) {
             openMediaModal(outputType);
             return;
         }
-        
+
         if (outputType === 'chat') {
             // Chat mode uses standard prompt but displays in note editor
             aiChatContainer.classList.add('hidden');
@@ -2156,7 +2735,7 @@ if (aiTypeSelect) {
             aiTodosPreviewSection.classList.add('hidden');
             aiLoading.classList.add('hidden');
             aiError.classList.add('hidden');
-            
+
             // Show file attachment controls in prompt area
             if (aiChatAttachBtn) aiChatAttachBtn.style.display = 'inline-flex';
         } else {
@@ -2175,7 +2754,7 @@ if (aiChatAttachBtn && aiChatFileInput) {
 
     aiChatFileInput.addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
-        
+
         for (const file of files) {
             if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
                 try {
@@ -2189,7 +2768,7 @@ if (aiChatAttachBtn && aiChatFileInput) {
                 showNotification('Only images and videos are supported', 'error');
             }
         }
-        
+
         // Clear input
         aiChatFileInput.value = '';
     });
@@ -2198,20 +2777,20 @@ if (aiChatAttachBtn && aiChatFileInput) {
 // Render chat attachments preview
 function renderChatAttachments() {
     if (!aiChatAttachments) return;
-    
+
     if (chatAttachedFiles.length === 0) {
         aiChatAttachments.classList.add('hidden');
         aiChatAttachments.innerHTML = '';
         return;
     }
-    
+
     aiChatAttachments.classList.remove('hidden');
     aiChatAttachments.innerHTML = chatAttachedFiles.map((file, index) => {
         const src = `data:${file.mimeType};base64,${file.data}`;
-        const mediaTag = file.type === 'image' 
-            ? `<img src="${src}" alt="${file.name}">` 
+        const mediaTag = file.type === 'image'
+            ? `<img src="${src}" alt="${file.name}">`
             : `<video src="${src}"></video>`;
-        
+
         return `
             <div class="chat-attachment-item">
                 ${mediaTag}
@@ -2219,7 +2798,7 @@ function renderChatAttachments() {
             </div>
         `;
     }).join('');
-    
+
     // Add remove handlers
     aiChatAttachments.querySelectorAll('.chat-attachment-remove').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -2234,61 +2813,154 @@ function renderChatAttachments() {
 function addChatMessage(role, content, attachments = []) {
     const currentLength = quill.getLength();
     let insertText = '';
-    
+
     // Add separator if note has content
     if (currentLength > 1) {
         insertText += '\n\n';
     }
-    
+
     // Add role header
     if (role === 'user') {
         insertText += '👤 You:\n';
     } else {
         insertText += '🤖 Assistant:\n';
     }
-    
+
     // Add attachments info
     if (attachments && attachments.length > 0) {
         insertText += `[${attachments.length} attachment(s)]\n`;
     }
-    
+
     // Add content
     if (content) {
         insertText += content + '\n';
     }
-    
+
     // Insert into editor
     const insertPosition = quill.getLength() - 1;
     quill.insertText(insertPosition, insertText);
-    
+
     // Auto-save
     updateActiveNote();
-    
+
     // Return last position for streaming updates
     return insertPosition + insertText.length;
+}
+
+// Insert markdown line with Quill formatting
+function insertMarkdownLine(quill, position, line) {
+    if (!line && line !== '\n') return position;
+
+    // Handle newlines
+    if (line === '\n') {
+        quill.insertText(position, '\n');
+        return position + 1;
+    }
+
+    // Check for headings
+    const h1Match = line.match(/^#\s+(.+)$/);
+    const h2Match = line.match(/^##\s+(.+)$/);
+    const h3Match = line.match(/^###\s+(.+)$/);
+
+    if (h3Match) {
+        quill.insertText(position, h3Match[1] + '\n');
+        quill.formatLine(position, h3Match[1].length, { header: 3 });
+        return position + h3Match[1].length + 1;
+    } else if (h2Match) {
+        quill.insertText(position, h2Match[1] + '\n');
+        quill.formatLine(position, h2Match[1].length, { header: 2 });
+        return position + h2Match[1].length + 1;
+    } else if (h1Match) {
+        quill.insertText(position, h1Match[1] + '\n');
+        quill.formatLine(position, h1Match[1].length, { header: 1 });
+        return position + h1Match[1].length + 1;
+    }
+
+    // Process inline formatting (bold, italic, code)
+    let processedLine = line;
+    let currentPos = position;
+    const segments = [];
+
+    // Parse bold **text**
+    const boldRegex = /\*\*(.+?)\*\*/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = boldRegex.exec(line)) !== null) {
+        // Add text before bold
+        if (match.index > lastIndex) {
+            segments.push({ text: line.substring(lastIndex, match.index), format: {} });
+        }
+        // Add bold text
+        segments.push({ text: match[1], format: { bold: true } });
+        lastIndex = match.index + match[0].length;
+    }
+
+    // Add remaining text
+    if (lastIndex < line.length) {
+        segments.push({ text: line.substring(lastIndex), format: {} });
+    }
+
+    // If no formatting found, just insert plain text
+    if (segments.length === 0) {
+        quill.insertText(currentPos, line);
+        return currentPos + line.length;
+    }
+
+    // Insert segments with formatting
+    segments.forEach(segment => {
+        quill.insertText(currentPos, segment.text, segment.format);
+        currentPos += segment.text.length;
+    });
+
+    return currentPos;
+}
+
+// Format preview content (convert markdown code blocks to HTML)
+function formatPreviewContent(text) {
+    if (!text) return '';
+
+    // Escape HTML first
+    text = text.replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    // Convert markdown code blocks to HTML with syntax highlighting classes
+    text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+        const language = lang || 'plaintext';
+        return `<pre><code class="language-${language}">${code.trim()}</code></pre>`;
+    });
+
+    // Convert inline code
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Convert line breaks to HTML
+    text = text.replace(/\n/g, '<br>');
+
+    return text;
 }
 
 // Format chat content (basic markdown support)
 function formatChatContent(text) {
     if (!text) return '';
-    
+
     // Code blocks
     text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
         return `<pre><code class="language-${lang || 'text'}">${escapeHtml(code.trim())}</code></pre>`;
     });
-    
+
     // Inline code
     text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-    
+
     // Bold
     text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    
+
     // Italic
     text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    
+
     // Line breaks
     text = text.replace(/\n/g, '<br>');
-    
+
     return text;
 }
 
@@ -2296,16 +2968,16 @@ function formatChatContent(text) {
 function addStreamingIndicator() {
     const currentLength = quill.getLength();
     let insertText = '';
-    
+
     if (currentLength > 1) {
         insertText += '\n\n';
     }
-    
+
     insertText += '🤖 Assistant:\n...';
-    
+
     const insertPosition = quill.getLength() - 1;
     quill.insertText(insertPosition, insertText);
-    
+
     return insertPosition + insertText.length - 3; // Return position before '...'
 }
 
@@ -2315,13 +2987,13 @@ if (aiGenerateBtn && aiPromptInput) {
         const message = aiPromptInput.value.trim();
         if (!message && chatAttachedFiles.length === 0) return;
         if (isStreamingChat) return;
-        
+
         const model = aiModelSelect.value;
-        
+
         // Determine provider
         let provider = '';
         let apiKey = '';
-        
+
         if (model.startsWith('gpt')) {
             provider = 'openai';
             apiKey = aiSettings.openaiKey;
@@ -2350,34 +3022,34 @@ if (aiGenerateBtn && aiPromptInput) {
             provider = 'gemini';
             apiKey = aiSettings.geminiKey;
         }
-        
+
         if (!provider) {
             showNotification('Provider not supported for streaming', 'error');
             return;
         }
-        
+
         if (!apiKey) {
             showNotification(`API Key for ${provider} is missing`, 'error');
             return;
         }
-        
+
         // Ensure we have an active note
         if (!activeNoteId) {
             // Create a new note for chat
             noteTitleEl.value = 'AI Chat - ' + new Date().toLocaleString();
             addNote();
         }
-        
+
         // Add user message
         const userAttachments = [...chatAttachedFiles];
         addChatMessage('user', message, userAttachments);
-        
+
         // Prepare message content (multimodal if attachments)
         let userContent;
         if (userAttachments.length > 0) {
             // Multimodal message
             userContent = [];
-            
+
             // Add attachments first
             for (const file of userAttachments) {
                 if (provider === 'openai') {
@@ -2407,7 +3079,7 @@ if (aiGenerateBtn && aiPromptInput) {
                     }
                 }
             }
-            
+
             // Add text
             if (message) {
                 if (provider === 'gemini') {
@@ -2419,23 +3091,30 @@ if (aiGenerateBtn && aiPromptInput) {
         } else {
             userContent = message;
         }
-        
+
         // Add to history
         chatHistory.push({ role: 'user', content: userContent });
-        
+
         // Clear input and attachments
         aiPromptInput.value = '';
         chatAttachedFiles = [];
         renderChatAttachments();
-        
+
         // Show streaming indicator
-        const streamStartPos = addStreamingIndicator();
         isStreamingChat = true;
         aiGenerateBtn.disabled = true;
-        
-        let assistantContent = '';
-        let hasStartedStreaming = false;
-        
+
+        // Add user message first
+        addChatMessage('user', userContent, chatAttachedFiles);
+
+        // Add assistant header and prepare for streaming
+        const startPos = quill.getLength();
+        quill.insertText(startPos - 1, '\n\n🤖 Assistant:\n');
+        let streamPosition = quill.getLength() - 1;
+
+        let streamedText = '';
+        let chatBuffer = ''; // Buffer for markdown parsing
+
         try {
             await callAIProviderStreaming(
                 provider,
@@ -2443,38 +3122,57 @@ if (aiGenerateBtn && aiPromptInput) {
                 model,
                 chatHistory,
                 // onChunk
-                (chunk, fullText) => {
-                    if (!hasStartedStreaming) {
-                        // Remove '...' indicator
-                        quill.deleteText(streamStartPos, 3);
-                        hasStartedStreaming = true;
+                (chunk) => {
+                    chatBuffer += chunk;
+
+                    // Process complete lines for markdown parsing  
+                    const lines = chatBuffer.split('\n');
+
+                    // Keep incomplete line in buffer
+                    if (!chunk.includes('\n')) {
+                        // Just accumulate in buffer, don't return yet - process on next chunk or completion
+                        return;
                     }
-                    
-                    // Replace text from stream start position
-                    const currentText = quill.getText(streamStartPos, quill.getLength() - streamStartPos);
-                    const diff = fullText.length - (currentText.length - 1); // -1 for newline
-                    
-                    if (diff > 0) {
-                        // Append new text
-                        quill.insertText(quill.getLength() - 1, chunk);
-                    }
-                    
-                    assistantContent = fullText;
+
+                    // Process complete lines except the last (which might be incomplete)
+                    const completeLines = lines.slice(0, -1);
+                    chatBuffer = lines[lines.length - 1];
+
+                    completeLines.forEach((line, idx) => {
+                        streamPosition = insertMarkdownLine(quill, streamPosition, line);
+                        // Add newline after each line except potentially the last
+                        if (idx < completeLines.length - 1 || chatBuffer === '') {
+                            streamPosition = insertMarkdownLine(quill, streamPosition, '\n');
+                        }
+                    });
+
+                    streamedText += chunk;
+
+                    // Scroll to show new content
+                    quill.setSelection(streamPosition, 0);
                     updateActiveNote();
                 },
                 // onComplete
                 (fullText) => {
+                    // Process any remaining buffer
+                    if (chatBuffer) {
+                        streamPosition = insertMarkdownLine(quill, streamPosition, chatBuffer);
+                    }
+
                     chatHistory.push({ role: 'assistant', content: fullText });
                     isStreamingChat = false;
                     aiGenerateBtn.disabled = false;
+
+                    // Trigger code formatting after streaming completes
+                    setTimeout(() => {
+                        scanAndFormatCodeBlocks(quill);
+                        highlightCodeBlocks();
+                    }, 100);
+
                     updateActiveNote();
                 },
                 // onError
                 (error) => {
-                    // Remove indicator
-                    if (!hasStartedStreaming) {
-                        quill.deleteText(streamStartPos - 15, quill.getLength() - streamStartPos + 15);
-                    }
                     showNotification('Chat error: ' + error.message, 'error');
                     isStreamingChat = false;
                     aiGenerateBtn.disabled = false;
@@ -2486,7 +3184,7 @@ if (aiGenerateBtn && aiPromptInput) {
             aiGenerateBtn.disabled = false;
         }
     };
-    
+
     // Add to existing generate button click handler
     const originalGenerateHandler = aiGenerateBtn.onclick;
     aiGenerateBtn.addEventListener('click', async (e) => {

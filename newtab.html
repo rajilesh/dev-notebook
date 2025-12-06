@@ -86,6 +86,15 @@
             <ul id="todo-list" class="todo-list">
                 <!-- Todo items will be injected here -->
             </ul>
+            <div class="todo-pagination">
+                <button id="todo-prev-btn" class="icon-btn small" title="Previous Page">
+                    <span class="material-icons">chevron_left</span>
+                </button>
+                <span id="todo-page-info" class="page-info">1 / 1</span>
+                <button id="todo-next-btn" class="icon-btn small" title="Next Page">
+                    <span class="material-icons">chevron_right</span>
+                </button>
+            </div>
         </aside>
     </div>
     <button id="fab-ai-btn" class="fab-btn" title="AI Assistant">
@@ -314,6 +323,8 @@
                         <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                         <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                         <option value="gemini-1.0-pro">Gemini 1.0 Pro</option>
+                        <option value="banana-1">Nano Banana 1</option>
+                        <option value="banana-1-mini">Nano Banana 1 Mini</option>
                     </optgroup>
                     <optgroup label="OpenAI">
                         <option value="gpt-4o">GPT-4o</option>
@@ -393,10 +404,7 @@
                         <button id="ai-cancel-btn" class="icon-btn small" title="Discard">
                             <span class="material-icons">close</span>
                         </button>
-                        <button id="ai-append-btn" class="icon-btn small hidden" title="Append to Note">
-                            <span class="material-icons">add</span>
-                        </button>
-                        <button id="ai-apply-btn" class="icon-btn small" title="Replace Note">
+                        <button id="ai-apply-btn" class="icon-btn small" title="Append to Note">
                             <span class="material-icons">check</span>
                         </button>
                     </div>
