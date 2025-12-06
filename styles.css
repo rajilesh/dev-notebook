@@ -1310,6 +1310,11 @@ body.light-mode .ai-model-select:hover {
     transition: border-color 0.3s;
 }
 
+.ai-prompt-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
 .ai-prompt-input:focus {
     border-color: var(--accent);
 }
@@ -1423,6 +1428,7 @@ body.light-mode .ai-model-select:hover {
 body.light-mode #ai-preview-section {
     background: rgba(0, 0, 0, 0.02);
     border-color: rgba(0, 0, 0, 0.08);
+    box-sizing: border-box;
 }
 
 @keyframes slideUp {
@@ -1725,4 +1731,15 @@ input:checked + .slider:before {
 
 .key-container.hidden {
     display: none;
+}
+
+
+
+.ql-editor.ql-blank::before {
+  left: 60px;
+}
+textarea#ai-prompt{
+
+    box-sizing: border-box;
+    height: 50px;
 }

@@ -48,6 +48,7 @@ const aiPreviewSection = document.getElementById('ai-preview-section');
 const aiPreviewTitle = document.getElementById('ai-preview-title');
 const aiPreviewContent = document.getElementById('ai-preview-content');
 const aiApplyBtn = document.getElementById('ai-apply-btn');
+const aiAppendBtn = document.getElementById('ai-append-btn');
 const aiCancelBtn = document.getElementById('ai-cancel-btn');
 const aiTodosPreviewSection = document.getElementById('ai-todos-preview-section');
 const aiTodosPreviewList = document.getElementById('ai-todos-preview-list');
@@ -1344,6 +1345,7 @@ if (aiModelSelect) {
 if (aiCancelBtn) {
     aiCancelBtn.addEventListener('click', () => {
         aiPreviewSection.classList.add('hidden');
+        aiAppendBtn.classList.add('hidden');
         aiPromptInput.value = '';
     });
 }
@@ -1647,6 +1649,15 @@ if (aiGenerateBtn) {
                 aiPreviewSection.dataset.content = content;
                 aiPreviewSection.dataset.outputType = outputType;
 
+                // Show append button if there's an existing note with content
+                if (activeNoteId && quill.getText().trim().length > 0) {
+                    aiAppendBtn.classList.remove('hidden');
+                    aiApplyBtn.title = 'Replace Note';
+                } else {
+                    aiAppendBtn.classList.add('hidden');
+                    aiApplyBtn.title = 'Apply';
+                }
+
                 aiPreviewSection.classList.remove('hidden');
             } else {
                 aiPreviewSection.classList.add('hidden');
@@ -1674,7 +1685,28 @@ if (aiApplyBtn) {
         
         aiPromptInput.value = '';
         aiPreviewSection.classList.add('hidden');
-        showNotification('Note generated successfully!', 'success');
+        aiAppendBtn.classList.add('hidden');
+        showNotification('Note replaced successfully!', 'success');
+    });
+}
+
+if (aiAppendBtn) {
+    aiAppendBtn.addEventListener('click', () => {
+        const content = aiPreviewSection.dataset.content;
+        
+        if (content) {
+            const currentText = quill.getText();
+            const currentLength = quill.getLength();
+            
+            // Insert at the end with double newline separation
+            quill.insertText(currentLength - 1, '\n\n' + content);
+        }
+        updateActiveNote();
+        
+        aiPromptInput.value = '';
+        aiPreviewSection.classList.add('hidden');
+        aiAppendBtn.classList.add('hidden');
+        showNotification('Content appended successfully!', 'success');
     });
 }
 
