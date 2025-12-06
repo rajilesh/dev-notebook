@@ -1225,6 +1225,27 @@ body.drag-over::before {
     /* Changed from flex to block */
 }
 
+.ai-dock-content {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background: var(--bg-sidebar);
+    border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    padding: 20px;
+    max-width: 600px;
+    width: 100%;
+    border: 1px solid var(--border);
+    transition: box-shadow 0.3s;
+    /* cursor: move; */
+    z-index: 1000;
+}
+
+.ai-dock-content.dragging {
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+    /* cursor: grabbing; */
+}
+
 .modal-content {
     background-color: var(--bg-editor);
     border-radius: 8px;

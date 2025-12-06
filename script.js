@@ -1075,6 +1075,87 @@ function clearAllTodos() {
     }
 }
 
+// Make AI dock draggable
+if (aiDock) {
+    const aiDockContent = aiDock.querySelector('.ai-dock-content');
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+    let xOffset = 0;
+    let yOffset = 0;
+
+    // Load saved position
+    const savedPosition = localStorage.getItem('aiDockPosition');
+    if (savedPosition) {
+        const { x, y } = JSON.parse(savedPosition);
+        aiDockContent.style.right = 'auto';
+        aiDockContent.style.bottom = 'auto';
+        aiDockContent.style.left = x + 'px';
+        aiDockContent.style.top = y + 'px';
+        xOffset = x;
+        yOffset = y;
+    }
+
+    aiDockContent.addEventListener('mousedown', dragStart);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', dragEnd);
+
+    function dragStart(e) {
+        // Don't drag if clicking on input or button
+        if (e.target.tagName === 'INPUT' ||
+            e.target.tagName === 'TEXTAREA' ||
+            e.target.tagName === 'BUTTON' ||
+            e.target.tagName === 'SELECT' ||
+            e.target.closest('button') ||
+            e.target.closest('input') ||
+            e.target.closest('textarea')) {
+            return;
+        }
+
+        initialX = e.clientX - xOffset;
+        initialY = e.clientY - yOffset;
+
+        isDragging = true;
+        aiDockContent.classList.add('dragging');
+    }
+
+    function drag(e) {
+        if (isDragging) {
+            e.preventDefault();
+
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+
+            xOffset = currentX;
+            yOffset = currentY;
+
+            setTranslate(currentX, currentY, aiDockContent);
+        }
+    }
+
+    function dragEnd(e) {
+        if (isDragging) {
+            initialX = currentX;
+            initialY = currentY;
+
+            isDragging = false;
+            aiDockContent.classList.remove('dragging');
+
+            // Save position
+            localStorage.setItem('aiDockPosition', JSON.stringify({ x: xOffset, y: yOffset }));
+        }
+    }
+
+    function setTranslate(xPos, yPos, el) {
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+        el.style.left = xPos + 'px';
+        el.style.top = yPos + 'px';
+    }
+}
+
 function saveTodos() {
     chrome.storage.local.set({ todos: todos });
 }
