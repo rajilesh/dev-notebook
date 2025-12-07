@@ -2031,8 +2031,8 @@ if (aiPromptInput) {
         const beforeSlash = text.substring(0, lastSlashIndex);
         const afterCursor = text.substring(cursorPos);
 
-        aiPromptInput.value = beforeSlash + snippet.text + afterCursor;
-        const newCursorPos = beforeSlash.length + snippet.text.length;
+        aiPromptInput.value = beforeSlash + snippet.text +'\n' + afterCursor;
+        const newCursorPos = beforeSlash.length + snippet.text.length + 1;
         aiPromptInput.setSelectionRange(newCursorPos, newCursorPos);
         aiPromptInput.focus();
         hideSnippetsMenu();
