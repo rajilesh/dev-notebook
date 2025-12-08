@@ -401,7 +401,7 @@ function initializeQuill() {
             },
             syntax: true  // Enable syntax highlighting module
         },
-        placeholder: 'Start typing... Use code-block for syntax highlighting',
+        placeholder: 'Start typing...',
     });
 
     // Initial highlight
@@ -712,12 +712,16 @@ function handleMarkdownShortcuts(quill, text, lineStart, offset) {
 
 async function init() {
     const data = await chrome.storage.local.get(['notes', 'todos', 'theme']);
-    notes = data.notes || [];
+    
+    // Always start with a fresh notebook - clear previous notes
+    notes = [];
     todos = data.todos || [];
     currentTheme = data.theme || 'system';
 
-    // Initialize Notes - Always create a new note when opening a new tab
-    notes.sort((a, b) => b.updatedAt - a.updatedAt);
+    // Clear notes from storage to start fresh
+    await chrome.storage.local.set({ notes: [] });
+
+    // Initialize Notes - Create a new note for the fresh session
     renderNotesList();
     createNewNote();
 
