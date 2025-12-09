@@ -337,6 +337,8 @@ let activeWorkspaceId = null;
 let activeProjectId = null;
 let activeItemType = 'note'; // 'note', 'bookmark', 'credential'
 let activeItemId = null; // Replaces activeNoteId
+let selectedItemIds = new Set(); // For Multi-selection
+
 
 // Legacy state for migration reference (will be removed/unused after migration)
 
@@ -901,7 +903,9 @@ function renderItemsList() {
     filteredItems.forEach(item => {
         const li = document.createElement('li');
         li.className = 'note-item';
+        // Active vs Selected logic
         if (item.id === activeItemId) li.classList.add('active');
+        if (selectedItemIds.has(item.id)) li.classList.add('selected');
 
         // Search Filter
         const searchTerm = document.getElementById('search-input').value.toLowerCase();
@@ -928,38 +932,150 @@ function renderItemsList() {
 
         if (match) {
             li.innerHTML = `
-                <div class="note-item-title">${escapeHtml(title)}</div>
-                <div class="note-item-preview">${escapeHtml(subText)}</div>
+                <div class="note-item-content">
+                    <div class="note-item-title">${escapeHtml(title)}</div>
+                    <div class="note-item-preview">${escapeHtml(subText)}</div>
+                </div>
+                <button class="note-item-delete-btn" title="Delete">
+                    <span class="material-icons">close</span>
+                </button>
             `;
 
-            li.addEventListener('click', () => setActiveItem(item.id));
+            // Click Handler (Selection)
+            li.addEventListener('click', (e) => {
+                // Prevent triggering if clicked on inner buttons (if any, though delete is handled separately)
+                // if (e.target.closest('button')) return; 
+
+                handleItemClick(e, item.id, filteredItems);
+            });
+
+            // Delete Handler
+            const deleteBtn = li.querySelector('.note-item-delete-btn');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent item selection
+                handleDeleteRequest(item.id);
+            });
+
             itemsListEl.appendChild(li);
         }
     });
 }
 
-function setActiveItem(id) {
-    activeItemId = id;
-    const item = getItem(id);
+function handleItemClick(e, id, visibleItems) {
+    if (e.shiftKey) {
+        // Multi-select range
+        if (activeItemId && activeItemId !== id) {
+            let startIdx = visibleItems.findIndex(i => i.id === activeItemId);
+            let endIdx = visibleItems.findIndex(i => i.id === id);
 
-    // Update List UI
-    document.querySelectorAll('.note-item').forEach(el => el.classList.remove('active'));
-    // Ideally find the specific LI, but re-render is cheap enough or we can find by index if needed
+            if (startIdx !== -1 && endIdx !== -1) {
+                const [min, max] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+                // Select everything in between
+                for (let i = min; i <= max; i++) {
+                    selectedItemIds.add(visibleItems[i].id);
+                }
+                // Update active to current, but keep selection
+                activeItemId = id;
+            }
+        } else {
+            selectedItemIds.add(id);
+            activeItemId = id;
+        }
+    } else if (e.metaKey || e.ctrlKey) {
+        // Toggle selection (standard behavior, though not strictly requested, good UX)
+        if (selectedItemIds.has(id)) {
+            selectedItemIds.delete(id);
+            if (activeItemId === id) activeItemId = null;
+        } else {
+            selectedItemIds.add(id);
+            activeItemId = id;
+        }
+    } else {
+        // Single select
+        selectedItemIds.clear();
+        selectedItemIds.add(id);
+        setActiveItem(id); // Sets active and clears other UI selection logic in render usually... 
+        // But setActiveItem implementation clears selection classes too naively? 
+        // Let's check setActiveItem.
+        // Actually setActiveItem calls renderItemsList, which reads selectedItemIds.
+    }
+    // Force re-render to show selection
     renderItemsList();
+    // Ensure the detailed view is updated for the active item
+    if (activeItemId) openItemEditor(activeItemId);
+}
 
-    // Switch View Pane
+function handleDeleteRequest(targetId) {
+    let itemsToDelete = [];
+
+    // Check if target is part of selection
+    if (selectedItemIds.has(targetId) && selectedItemIds.size > 1) {
+        // Delete all selected
+        itemsToDelete = Array.from(selectedItemIds);
+    } else {
+        // Delete only target
+        itemsToDelete = [targetId];
+    }
+
+    if (confirm(`Delete ${itemsToDelete.length} item(s)? This cannot be undone.`)) {
+        deleteItems(itemsToDelete);
+    }
+}
+
+function deleteItems(idsToDelete) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+
+    proj.items = proj.items.filter(item => !idsToDelete.includes(item.id));
+
+    // Clear selection
+    selectedItemIds.clear();
+
+    // Reset active item if deleted
+    if (idsToDelete.includes(activeItemId)) {
+        activeItemId = null;
+        if (proj.items.length > 0) {
+            // Select first available of current type?
+            const next = proj.items.find(i => i.type === activeItemType);
+            if (next) {
+                activeItemId = next.id;
+                selectedItemIds.add(next.id);
+            } else {
+                // Or create new if empty? Users might prefer empty list.
+                // createNewItem(); 
+                // Let's just clear editor
+            }
+        } else {
+            // Create new if truly empty to avoid confusing empty state?
+            createNewItem();
+        }
+    } else if (activeItemId) {
+        // Retain selection of active item
+        selectedItemIds.add(activeItemId);
+    }
+
+    saveWorkspaces();
+    renderItemsList();
+    if (activeItemId) openItemEditor(activeItemId);
+    else hideEditors();
+}
+
+function hideEditors() {
+    document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
+}
+
+function openItemEditor(id) {
+    // Logic extracted from setActiveItem to just switch view without resetting list state
+    const item = getItem(id);
     document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
 
-    if (!item) {
-        // Handle no item selected
-        return;
-    }
+    if (!item) return;
 
     if (item.type === 'note') {
         document.getElementById('editor-content').classList.remove('hidden');
         noteTitleEl.value = item.title || '';
-        // Init Quill content
         if (quill) {
+            // ... (reuse existing quill set logic)
             if (item.body && typeof item.body === 'object' && item.body.ops) {
                 quill.setContents(item.body);
             } else if (item.body && item.body.startsWith('{')) {
@@ -983,6 +1099,17 @@ function setActiveItem(id) {
         credentialPasswordInput.value = item.password || '';
         credentialNotesInput.value = item.notes || '';
     }
+}
+
+function setActiveItem(id) {
+    if (activeItemId !== id) {
+        activeItemId = id;
+        selectedItemIds.clear();
+        if (id) selectedItemIds.add(id);
+    }
+
+    renderItemsList();
+    openItemEditor(id);
 }
 
 function createNewItem() {
