@@ -3,12 +3,12 @@ const appContainer = document.querySelector('.app-container');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
 
 // Note Elements
-const notesListEl = document.getElementById('notes-list');
+// Legacy notesListEl removed
 const noteTitleEl = document.getElementById('note-title');
 const editorContent = document.getElementById('editor-content');
 const editorToolbar = document.getElementById('editor-toolbar');
 const searchInput = document.getElementById('search-input');
-const addBtn = document.getElementById('add-note-btn');
+// Legacy addBtn removed
 const deleteBtn = document.getElementById('delete-note-btn');
 const statusEl = document.getElementById('save-status');
 const shareBtn = document.getElementById('share-btn');
@@ -163,6 +163,38 @@ const addSnippetBtn = document.getElementById('add-snippet-btn');
 const saveSnippetsBtn = document.getElementById('save-snippets-btn');
 const resetSnippetsBtn = document.getElementById('reset-snippets-btn');
 
+// --- Workspaces / Projects / Resources Elements ---
+const workspaceSelect = document.getElementById('workspace-select');
+const addWorkspaceBtn = document.getElementById('add-workspace-btn');
+const editWorkspaceBtn = document.getElementById('edit-workspace-btn');
+const deleteWorkspaceBtn = document.getElementById('delete-workspace-btn');
+
+const projectSelect = document.getElementById('project-select');
+const addProjectBtn = document.getElementById('add-project-btn');
+const editProjectBtn = document.getElementById('edit-project-btn');
+const deleteProjectBtn = document.getElementById('delete-project-btn');
+
+const resourceTabs = document.querySelectorAll('.tab-btn');
+const addItemBtn = document.getElementById('add-item-btn');
+const itemsListEl = document.getElementById('items-list');
+
+// Editors
+const bookmarkEditor = document.getElementById('bookmark-editor');
+const bookmarkTitleInput = document.getElementById('bookmark-title-input');
+const bookmarkUrlInput = document.getElementById('bookmark-url-input');
+const bookmarkDescInput = document.getElementById('bookmark-desc-input');
+const saveBookmarkBtn = document.getElementById('save-bookmark-btn');
+const visitBookmarkBtn = document.getElementById('visit-bookmark-btn');
+
+const credentialEditor = document.getElementById('credential-editor');
+const credentialTitleInput = document.getElementById('credential-title-input');
+const credentialUsernameInput = document.getElementById('credential-username-input');
+const credentialPasswordInput = document.getElementById('credential-password-input');
+const credentialNotesInput = document.getElementById('credential-notes-input');
+const saveCredentialBtn = document.getElementById('save-credential-btn');
+const togglePasswordBtn = document.getElementById('toggle-password-visibility');
+const copyBtns = document.querySelectorAll('.copy-btn');
+
 // AI Models Configuration
 const ALL_MODELS = {
     openai: {
@@ -298,9 +330,16 @@ let aiSettings = {
     systemInstruction: "You are a helpful assistant that generates notes. Please provide the response in JSON format with 'title' and 'content' fields. The content should be formatted in Markdown."
 };
 
+
 // --- State ---
-let notes = [];
-let activeNoteId = null;
+let workspaces = [];
+let activeWorkspaceId = null;
+let activeProjectId = null;
+let activeItemType = 'note'; // 'note', 'bookmark', 'credential'
+let activeItemId = null; // Replaces activeNoteId
+
+// Legacy state for migration reference (will be removed/unused after migration)
+
 let todos = [];
 let currentTheme = 'system'; // 'light', 'dark', 'system'
 let currentTodoPage = 1;
@@ -425,10 +464,29 @@ function initializeQuill() {
     quill.on('text-change', () => {
         clearTimeout(saveTimeout);
         saveTimeout = setTimeout(() => {
-            if (activeNoteId) {
-                updateActiveNote();
+            if (activeItemId) {
+                const item = getItem(activeItemId);
+                if (item && item.type === 'note') {
+                    item.title = noteTitleEl.value; // Sync title too if needed or handle separately
+                    item.body = quill.getContents();
+                    saveWorkspaces();
+                    // Optional: Update list item preview if needed, but debounced
+                }
             }
         }, 500);
+    });
+
+    // Note Title Listener
+    noteTitleEl.addEventListener('input', () => {
+        const item = getItem(activeItemId);
+        if (item) {
+            item.title = noteTitleEl.value;
+            // Update list item immediately for better UX
+            renderItemsList();
+            // Debounce save
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(saveWorkspaces, 500);
+        }
     });
 
     // Enable image paste
@@ -711,83 +769,533 @@ function handleMarkdownShortcuts(quill, text, lineStart, offset) {
 }
 
 async function init() {
-    const data = await chrome.storage.local.get(['notes', 'todos', 'theme']);
+    const data = await chrome.storage.local.get(['workspaces', 'notes', 'todos', 'theme', 'activeWorkspaceId', 'activeProjectId']);
 
-    // Load notes from storage
-    notes = data.notes || [];
-    todos = data.todos || [];
+    // Theme
     currentTheme = data.theme || 'system';
+    applyTheme(currentTheme);
 
-    // Initialize Notes - Always show a blank note
-    renderNotesList();
-    createNewNote();
-
-    // Initialize Todos
+    // Todos (kept global for now, separate from projects as per user request flow usually)
+    todos = data.todos || [];
     renderTodoList();
 
-    // Initialize Theme
-    applyTheme(currentTheme);
+    // Data Migration & Initialization
+    if (!data.workspaces || data.workspaces.length === 0) {
+        // Migration: Create default workspace with existing notes
+        const existingNotes = data.notes || [];
+
+        const defaultProject = {
+            id: 'proj_' + Date.now(),
+            name: 'General',
+            items: existingNotes.map(n => ({ ...n, type: 'note' })) // Ensure type is set
+        };
+
+        const defaultWorkspace = {
+            id: 'ws_' + Date.now(),
+            name: 'Personal',
+            projects: [defaultProject]
+        };
+
+        workspaces = [defaultWorkspace];
+        activeWorkspaceId = defaultWorkspace.id;
+        activeProjectId = defaultProject.id;
+
+        // Save migrated structure
+        await saveWorkspaces();
+        console.log('Migrated notes to workspaces structure.');
+    } else {
+        workspaces = data.workspaces;
+        activeWorkspaceId = data.activeWorkspaceId || workspaces[0].id;
+
+        // Validate active Project
+        const ws = workspaces.find(w => w.id === activeWorkspaceId);
+        if (ws && ws.projects.length > 0) {
+            activeProjectId = data.activeProjectId || ws.projects[0].id;
+        } else if (ws) {
+            // Should verify project exists or create one
+            const newProj = { id: 'proj_' + Date.now(), name: 'General', items: [] };
+            ws.projects.push(newProj);
+            activeProjectId = newProj.id;
+            saveWorkspaces();
+        }
+    }
+
+    // Render UI
+    renderSidebarControls();
+    renderItemsList();
+
+    // Select first item or create new
+    const currentProject = getCurrentProject();
+    if (currentProject && currentProject.items.length > 0) {
+        // Try to filter by type to find a valid item
+        const firstItem = currentProject.items.find(i => i.type === activeItemType);
+        if (firstItem) {
+            setActiveItem(firstItem.id);
+        } else {
+            createNewItem();
+        }
+    } else {
+        createNewItem();
+    }
 }
 
+// --- Data Persistence ---
+async function saveWorkspaces() {
+    await chrome.storage.local.set({
+        workspaces: workspaces,
+        activeWorkspaceId: activeWorkspaceId,
+        activeProjectId: activeProjectId
+    });
+}
+
+// --- Helper Accessors ---
+function getCurrentWorkspace() {
+    return workspaces.find(w => w.id === activeWorkspaceId);
+}
+
+function getCurrentProject() {
+    const ws = getCurrentWorkspace();
+    return ws ? ws.projects.find(p => p.id === activeProjectId) : null;
+}
+
+function getItem(id) {
+    const proj = getCurrentProject();
+    if (!proj) return null;
+    return proj.items.find(i => i.id === id);
+}
+
+// --- UI Rendering ---
+
+function renderSidebarControls() {
+    // Render Workspace Select
+    workspaceSelect.innerHTML = '';
+    workspaces.forEach(ws => {
+        const option = document.createElement('option');
+        option.value = ws.id;
+        option.textContent = ws.name;
+        if (ws.id === activeWorkspaceId) option.selected = true;
+        workspaceSelect.appendChild(option);
+    });
+
+    // Render Project Select
+    projectSelect.innerHTML = '';
+    const currentWs = getCurrentWorkspace();
+    if (currentWs) {
+        currentWs.projects.forEach(proj => {
+            const option = document.createElement('option');
+            option.value = proj.id;
+            option.textContent = proj.name;
+            if (proj.id === activeProjectId) option.selected = true;
+            projectSelect.appendChild(option);
+        });
+    }
+}
+
+function renderItemsList() {
+    itemsListEl.innerHTML = '';
+    const currentProject = getCurrentProject();
+    if (!currentProject) return;
+
+    const filteredItems = currentProject.items.filter(item => item.type === activeItemType);
+
+    filteredItems.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'note-item';
+        if (item.id === activeItemId) li.classList.add('active');
+
+        // Search Filter
+        const searchTerm = document.getElementById('search-input').value.toLowerCase();
+        let match = true;
+
+        // Different display based on Type
+        let title = item.title || 'Untitled';
+        let subText = '';
+
+        if (item.type === 'note') {
+            subText = item.body ? String(item.body).substring(0, 50).replace(/<[^>]*>/g, '') + '...' : 'No content';
+            // If body is delta object
+            if (item.body && typeof item.body === 'object') subText = 'Content...';
+        } else if (item.type === 'bookmark') {
+            subText = item.url || '';
+        } else if (item.type === 'credential') {
+            subText = item.username || '********';
+        }
+
+        if (searchTerm) {
+            const searchContent = (title + subText).toLowerCase();
+            if (!searchContent.includes(searchTerm)) match = false;
+        }
+
+        if (match) {
+            li.innerHTML = `
+                <div class="note-item-title">${escapeHtml(title)}</div>
+                <div class="note-item-preview">${escapeHtml(subText)}</div>
+            `;
+
+            li.addEventListener('click', () => setActiveItem(item.id));
+            itemsListEl.appendChild(li);
+        }
+    });
+}
+
+function setActiveItem(id) {
+    activeItemId = id;
+    const item = getItem(id);
+
+    // Update List UI
+    document.querySelectorAll('.note-item').forEach(el => el.classList.remove('active'));
+    // Ideally find the specific LI, but re-render is cheap enough or we can find by index if needed
+    renderItemsList();
+
+    // Switch View Pane
+    document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
+
+    if (!item) {
+        // Handle no item selected
+        return;
+    }
+
+    if (item.type === 'note') {
+        document.getElementById('editor-content').classList.remove('hidden');
+        noteTitleEl.value = item.title || '';
+        // Init Quill content
+        if (quill) {
+            if (item.body && typeof item.body === 'object' && item.body.ops) {
+                quill.setContents(item.body);
+            } else if (item.body && item.body.startsWith('{')) {
+                try {
+                    const delta = JSON.parse(item.body);
+                    quill.setContents(delta);
+                } catch (e) { quill.setText(item.body || ''); }
+            } else {
+                quill.setText(item.body || '');
+            }
+        }
+    } else if (item.type === 'bookmark') {
+        bookmarkEditor.classList.remove('hidden');
+        bookmarkTitleInput.value = item.title || '';
+        bookmarkUrlInput.value = item.url || '';
+        bookmarkDescInput.value = item.description || '';
+    } else if (item.type === 'credential') {
+        credentialEditor.classList.remove('hidden');
+        credentialTitleInput.value = item.title || '';
+        credentialUsernameInput.value = item.username || '';
+        credentialPasswordInput.value = item.password || '';
+        credentialNotesInput.value = item.notes || '';
+    }
+}
+
+function createNewItem() {
+    const proj = getCurrentProject();
+    if (!proj) return;
+
+    const newItem = {
+        id: Date.now().toString(),
+        type: activeItemType,
+        title: '',
+        created: new Date().toISOString()
+    };
+
+    if (activeItemType === 'note') {
+        newItem.body = '';
+    } else if (activeItemType === 'bookmark') {
+        newItem.url = '';
+        newItem.description = '';
+    } else if (activeItemType === 'credential') {
+        newItem.username = '';
+        newItem.password = '';
+        newItem.notes = '';
+    }
+
+    proj.items.unshift(newItem); // Add to top
+    saveWorkspaces();
+    setActiveItem(newItem.id);
+}
+
+// --- Event Listeners for New Controls ---
+
+workspaceSelect.addEventListener('change', (e) => {
+    activeWorkspaceId = e.target.value;
+    // Set active project to first in new workspace
+    const ws = getCurrentWorkspace();
+    if (ws && ws.projects.length > 0) activeProjectId = ws.projects[0].id;
+    saveWorkspaces();
+    renderSidebarControls();
+    renderItemsList();
+    createNewItem(); // Or select first
+});
+
+projectSelect.addEventListener('change', (e) => {
+    activeProjectId = e.target.value;
+    saveWorkspaces();
+    renderItemsList();
+    createNewItem();
+});
+
+addWorkspaceBtn.addEventListener('click', async () => {
+    const name = prompt('New Workspace Name:');
+    if (name) {
+        const newWs = {
+            id: 'ws_' + Date.now(),
+            name: name,
+            projects: [{ id: 'proj_' + Date.now(), name: 'General', items: [] }]
+        };
+        workspaces.push(newWs);
+        activeWorkspaceId = newWs.id;
+        activeProjectId = newWs.projects[0].id;
+        await saveWorkspaces();
+        renderSidebarControls();
+        renderItemsList();
+        createNewItem();
+    }
+});
+
+addProjectBtn.addEventListener('click', async () => {
+    const name = prompt('New Project Name:');
+    if (name) {
+        const ws = getCurrentWorkspace();
+        if (ws) {
+            const newProj = { id: 'proj_' + Date.now(), name: name, items: [] };
+            ws.projects.push(newProj);
+            activeProjectId = newProj.id;
+            await saveWorkspaces();
+            renderSidebarControls();
+            renderItemsList();
+            createNewItem();
+        }
+    }
+});
+
+resourceTabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+        resourceTabs.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeItemType = btn.dataset.type;
+        renderItemsList();
+        // Try to select first item of new type
+        const proj = getCurrentProject();
+        if (proj) {
+            const first = proj.items.find(i => i.type === activeItemType);
+            if (first) setActiveItem(first.id);
+            else createNewItem();
+        }
+    });
+});
+
+
+// --- Edit/Delete Workspace & Project Listeners ---
+
+// Rename Workspace
+editWorkspaceBtn.addEventListener('click', async () => {
+    const ws = getCurrentWorkspace();
+    if (!ws) return;
+
+    const newName = prompt('Rename Workspace:', ws.name);
+    if (newName && newName.trim() !== '') {
+        ws.name = newName.trim();
+        await saveWorkspaces();
+        renderSidebarControls();
+        showNotification('Workspace renamed');
+    }
+});
+
+// Delete Workspace
+deleteWorkspaceBtn.addEventListener('click', async () => {
+    const ws = getCurrentWorkspace();
+    if (!ws) return;
+
+    if (workspaces.length <= 1) {
+        showNotification('Cannot delete the last workspace', 'error');
+        return;
+    }
+
+    if (confirm(`Are you sure you want to delete workspace "${ws.name}"? All projects and items inside it will be lost.`)) {
+        // Remove workspace
+        workspaces = workspaces.filter(w => w.id !== ws.id);
+
+        // Select another workspace
+        activeWorkspaceId = workspaces[0].id;
+        if (workspaces[0].projects.length > 0) {
+            activeProjectId = workspaces[0].projects[0].id;
+        } else {
+            activeProjectId = null;
+        }
+
+        await saveWorkspaces();
+        renderSidebarControls();
+        renderItemsList();
+
+        // Try to select an item
+        const proj = getCurrentProject();
+        if (proj && proj.items.length > 0) {
+            const next = proj.items.find(i => i.type === activeItemType) || proj.items[0];
+            setActiveItem(next ? next.id : null);
+        } else {
+            setActiveItem(null); // Or create new?
+        }
+
+        showNotification('Workspace deleted');
+    }
+});
+
+// Rename Project
+editProjectBtn.addEventListener('click', async () => {
+    const proj = getCurrentProject();
+    if (!proj) return;
+
+    const newName = prompt('Rename Project:', proj.name);
+    if (newName && newName.trim() !== '') {
+        proj.name = newName.trim();
+        await saveWorkspaces();
+        renderSidebarControls(); // Project names are in select
+        showNotification('Project renamed');
+    }
+});
+
+// Delete Project
+deleteProjectBtn.addEventListener('click', async () => {
+    const ws = getCurrentWorkspace();
+    const proj = getCurrentProject();
+    if (!ws || !proj) return;
+
+    if (ws.projects.length <= 1) {
+        showNotification('Cannot delete the last project in a workspace', 'error');
+        return;
+    }
+
+    if (confirm(`Are you sure you want to delete project "${proj.name}"? All items inside it will be lost.`)) {
+        // Remove project
+        ws.projects = ws.projects.filter(p => p.id !== proj.id);
+
+        // Select another project
+        if (ws.projects.length > 0) {
+            activeProjectId = ws.projects[0].id;
+        }
+
+        await saveWorkspaces();
+        renderSidebarControls();
+        renderItemsList();
+
+        // Select item
+        const newProj = getCurrentProject();
+        if (newProj && newProj.items.length > 0) {
+            const next = newProj.items.find(i => i.type === activeItemType) || newProj.items[0];
+            if (next) setActiveItem(next.id);
+            else {
+                setActiveItem(null);
+                createNewItem();
+            }
+        } else {
+            setActiveItem(null);
+            createNewItem();
+        }
+
+        showNotification('Project deleted');
+    }
+});
+
+addItemBtn.addEventListener('click', createNewItem);
+fabAddBtn.addEventListener('click', createNewItem);
+
+// Bookmark Save
+saveBookmarkBtn.addEventListener('click', () => {
+    const item = getItem(activeItemId);
+    if (item && item.type === 'bookmark') {
+        item.title = bookmarkTitleInput.value;
+        item.url = bookmarkUrlInput.value;
+        item.description = bookmarkDescInput.value;
+        saveWorkspaces();
+        renderItemsList(); // Update title in list
+        showNotification('Bookmark saved');
+    }
+});
+
+visitBookmarkBtn.addEventListener('click', () => {
+    const url = bookmarkUrlInput.value;
+    if (url) window.open(url, '_blank');
+});
+
+// Credential Save
+saveCredentialBtn.addEventListener('click', () => {
+    const item = getItem(activeItemId);
+    if (item && item.type === 'credential') {
+        item.title = credentialTitleInput.value;
+        item.username = credentialUsernameInput.value;
+        item.password = credentialPasswordInput.value;
+        item.notes = credentialNotesInput.value;
+        saveWorkspaces();
+        renderItemsList();
+        showNotification('Credential saved');
+    }
+});
+
+togglePasswordBtn.addEventListener('click', () => {
+    const type = credentialPasswordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+    credentialPasswordInput.setAttribute('type', type);
+});
+
+copyBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetId = btn.dataset.target;
+        const input = document.getElementById(targetId);
+        if (input) {
+            navigator.clipboard.writeText(input.value);
+            showNotification('Copied to clipboard');
+        }
+    });
+});
+
+
+// --- Cross-Tab Synchronization ---
+// Listen for changes in chrome.storage from other tabs
 // --- Cross-Tab Synchronization ---
 // Listen for changes in chrome.storage from other tabs
 chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local') {
-        let shouldUpdateNotes = false;
-        let shouldUpdateTodos = false;
+        if (changes.workspaces) {
+            workspaces = changes.workspaces.newValue || [];
+            if (activeProjectId) {
+                // Check if active project still exists
+                const proj = getCurrentProject();
+                if (!proj) {
+                    // Fallback if deleted
+                    if (workspaces.length > 0) {
+                        activeWorkspaceId = workspaces[0].id;
+                        if (workspaces[0].projects.length > 0) activeProjectId = workspaces[0].projects[0].id;
+                    }
+                }
+            }
+            renderSidebarControls();
+            renderItemsList();
 
-        if (changes.notes) {
-            notes = changes.notes.newValue || [];
-            shouldUpdateNotes = true;
+            // If active item updated, refresh it (if not typing)
+            if (activeItemId && !quill.hasFocus()) {
+                const item = getItem(activeItemId);
+                if (item && item.type === 'note') {
+                    // Update Quill if needed (complex diffing omitted for brevity, just refreshing title/list usually enough unless collaborative)
+                }
+            }
+        }
+
+        if (changes.activeWorkspaceId) {
+            activeWorkspaceId = changes.activeWorkspaceId.newValue;
+            renderSidebarControls();
+            renderItemsList();
+        }
+
+        if (changes.activeProjectId) {
+            activeProjectId = changes.activeProjectId.newValue;
+            renderItemsList();
         }
 
         if (changes.todos) {
             todos = changes.todos.newValue || [];
-            shouldUpdateTodos = true;
+            renderTodoList();
         }
 
         if (changes.theme) {
             currentTheme = changes.theme.newValue || 'system';
             applyTheme(currentTheme);
-        }
-
-        // Update UI if data changed
-        if (shouldUpdateNotes) {
-            renderNotesList();
-
-            // If the active note still exists, refresh it
-            if (activeNoteId && notes.find(n => n.id === activeNoteId)) {
-                const note = notes.find(n => n.id === activeNoteId);
-                if (note && quill) {
-                    // Only update if not currently typing (to avoid disrupting user)
-                    if (!quill.hasFocus()) {
-                        noteTitleEl.value = note.title;
-                        try {
-                            if (note.body && typeof note.body === 'object' && note.body.ops) {
-                                quill.setContents(note.body);
-                            } else if (note.body && note.body.startsWith('{')) {
-                                const delta = JSON.parse(note.body);
-                                quill.setContents(delta);
-                            } else {
-                                quill.setText(note.body || '');
-                            }
-                        } catch (e) {
-                            quill.setText(note.body || '');
-                        }
-                    }
-                }
-            } else if (activeNoteId && !notes.find(n => n.id === activeNoteId)) {
-                // Active note was deleted in another tab
-                if (notes.length > 0) {
-                    setActiveNote(notes[0].id);
-                } else {
-                    createNewNote();
-                }
-            }
-        }
-
-        if (shouldUpdateTodos) {
-            renderTodoList();
         }
     }
 });
@@ -811,206 +1319,30 @@ function showNotification(message, type = 'info', duration = 3000) {
 }
 
 // --- Note Management ---
-function isNoteEmpty(note) {
-    // If a title is not null (has content, even whitespace), consider it a note
-    if (note.title && note.title.length > 0) {
-        return false;
-    }
+// --- Note Management (Replaced by Item Management) ---
 
-    const title = (note.title || '').trim();
-    let bodyText = '';
-    if (note.body && typeof note.body === 'object' && note.body.ops) {
-        bodyText = note.body.ops.map(op => op.insert || '').join('').trim();
-    } else {
-        bodyText = (note.body || '').trim();
-    }
-    return title.length === 0 && bodyText.length === 0;
-}
+function deleteActiveItem() {
+    const proj = getCurrentProject();
+    if (!proj || !activeItemId) return;
 
-function createNewNote() {
-    // Ensure current note is up to date with UI before checking
-    if (activeNoteId) {
-        const noteIndex = notes.findIndex(n => n.id === activeNoteId);
-        if (noteIndex !== -1) {
-            notes[noteIndex].title = noteTitleEl.value;
-        }
-    }
+    if (confirm('Are you sure you want to delete this item?')) {
+        proj.items = proj.items.filter(i => i.id !== activeItemId);
+        saveWorkspaces();
+        renderItemsList();
 
-    // If current active note is empty, reuse it instead of creating a new one
-    if (activeNoteId) {
-        const currentNote = notes.find(n => n.id === activeNoteId);
-        if (currentNote && isNoteEmpty(currentNote)) {
-            noteTitleEl.focus();
-            return;
-        }
-    }
-
-    const newNote = {
-        id: Date.now().toString(),
-        title: '',
-        body: '',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-    };
-
-    notes.unshift(newNote);
-    activeNoteId = newNote.id;
-
-    saveNotes();
-    renderNotesList();
-
-    // Reset editor
-    noteTitleEl.value = '';
-    if (quill) quill.setText('');
-
-    // Focus title
-    noteTitleEl.focus();
-}
-
-function updateActiveNote() {
-    if (!activeNoteId) return;
-
-    const noteIndex = notes.findIndex(n => n.id === activeNoteId);
-    if (noteIndex === -1) return;
-
-    const updatedNote = {
-        ...notes[noteIndex],
-        title: noteTitleEl.value,
-        body: quill.getContents(), // Save as Delta object
-        updatedAt: Date.now()
-    };
-
-    // Update in place (do not move to top)
-    notes[noteIndex] = updatedNote;
-
-    saveNotes();
-    renderNotesList();
-
-    statusEl.textContent = 'Saved';
-    statusEl.style.opacity = '1';
-    setTimeout(() => {
-        statusEl.style.opacity = '0.5';
-    }, 1000);
-}
-
-function deleteActiveNote() {
-    if (!activeNoteId) return;
-
-    if (confirm('Are you sure you want to delete this note?')) {
-        notes = notes.filter(n => n.id !== activeNoteId);
-        saveNotes();
-
-        if (notes.length > 0) {
-            setActiveNote(notes[0].id);
+        // Select another item
+        if (proj.items.length > 0) {
+            // Find one of compatible type if possible
+            const next = proj.items.find(i => i.type === activeItemType) || proj.items[0];
+            setActiveItem(next.id);
         } else {
-            createNewNote();
+            createNewItem();
         }
     }
 }
 
-function setActiveNote(id) {
-    // If switching away from an empty note, remove it
-    if (activeNoteId && activeNoteId !== id) {
-        const prevNoteIndex = notes.findIndex(n => n.id === activeNoteId);
-        if (prevNoteIndex !== -1) {
-            const prevNote = notes[prevNoteIndex];
-            // if (isNoteEmpty(prevNote)) {
-            //     notes.splice(prevNoteIndex, 1);
-            //     saveNotes();
-            // }
-            // notes.splice(prevNoteIndex, 1);
-            saveNotes();
-        }
-    }
-
-    const note = notes.find(n => n.id === id);
-    if (!note) return;
-
-    activeNoteId = id;
-    noteTitleEl.value = note.title;
-
-    // Handle different body formats (legacy text vs Delta)
-    try {
-        if (note.body && typeof note.body === 'object' && note.body.ops) {
-            quill.setContents(note.body);
-        } else if (note.body && note.body.startsWith('{')) {
-            // Try parsing JSON string
-            const delta = JSON.parse(note.body);
-            quill.setContents(delta);
-        } else {
-            quill.setText(note.body || '');
-        }
-    } catch (e) {
-        console.error('Error setting content:', e);
-        quill.setText(note.body || '');
-    }
-
-    // Trigger syntax highlighting after content is loaded
-    setTimeout(() => {
-        highlightCodeBlocks();
-    }, 100);
-
-    renderNotesList();
-
-    // Close sidebar on mobile
-    if (window.innerWidth <= 768) {
-        appContainer.classList.remove('sidebar-open');
-    }
-}
-
-function saveNotes() {
-    // Save all notes to storage (including empty ones for proper syncing)
-    chrome.storage.local.set({ notes: notes });
-}
-
-function renderNotesList() {
-    notesListEl.innerHTML = '';
-
-    // Filter notes based on search
-    const searchTerm = searchInput.value.toLowerCase();
-    const filteredNotes = notes.filter(note => {
-        const title = (note.title || '').toLowerCase();
-        // For body search, we need to extract text from Delta if it's an object
-        let bodyText = '';
-        if (note.body && typeof note.body === 'object' && note.body.ops) {
-            bodyText = note.body.ops.map(op => op.insert || '').join('').toLowerCase();
-        } else {
-            bodyText = (note.body || '').toLowerCase();
-        }
-        return title.includes(searchTerm) || bodyText.includes(searchTerm);
-    });
-
-    filteredNotes.forEach(note => {
-        const li = document.createElement('li');
-        li.className = 'note-item';
-        if (note.id === activeNoteId) {
-            li.classList.add('active');
-        }
-
-        const title = note.title || 'Untitled Note';
-        const date = new Date(note.updatedAt).toLocaleDateString();
-
-        // Preview text
-        let preview = 'No content';
-        if (note.body) {
-            if (typeof note.body === 'object' && note.body.ops) {
-                preview = note.body.ops.map(op => op.insert || '').join('').substring(0, 50);
-            } else if (typeof note.body === 'string') {
-                preview = note.body.substring(0, 50);
-            }
-        }
-        if (preview.length >= 50) preview += '...';
-
-        li.innerHTML = `
-            <div class="note-title">${escapeHtml(title)}</div>
-            <div class="note-preview">${escapeHtml(preview)}</div>
-            <div class="note-date">${date}</div>
-        `;
-
-        li.addEventListener('click', () => setActiveNote(note.id));
-        notesListEl.appendChild(li);
-    });
-}
+// Map delete button
+deleteBtn.addEventListener('click', deleteActiveItem);
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -1021,6 +1353,7 @@ function escapeHtml(text) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
 }
+
 
 // --- Todo Management ---
 function createTodo(text) {
@@ -1335,18 +1668,10 @@ toggleSidebarBtn.addEventListener('click', () => {
     appContainer.classList.toggle('sidebar-open');
 });
 
-addBtn.addEventListener('click', createNewNote);
-fabAddBtn.addEventListener('click', createNewNote);
-deleteBtn.addEventListener('click', deleteActiveNote);
 
-// Update note title on input
-noteTitleEl.addEventListener('input', () => {
-    if (activeNoteId) {
-        updateActiveNote();
-    }
-});
+// Search Listener
+searchInput.addEventListener('input', renderItemsList);
 
-searchInput.addEventListener('input', renderNotesList);
 
 todoToggleBtn.addEventListener('click', () => {
     appContainer.classList.toggle('todo-open');
@@ -1392,16 +1717,17 @@ closeSettingsBtn.addEventListener('click', () => {
 });
 
 deleteAllBtn.addEventListener('click', () => {
-    if (confirm('WARNING: This will delete ALL notes and to-dos permanently. Are you sure?')) {
-        notes = [];
+    if (confirm('WARNING: This will delete ALL Workspaces, Projects, and items permanently. Are you sure?')) {
+        workspaces = [];
+        activeWorkspaceId = null;
+        activeProjectId = null;
         todos = [];
-        activeNoteId = null;
-        chrome.storage.local.set({ notes, todos });
-        renderNotesList();
-        renderTodoList();
-        createNewNote();
-        showNotification('All data deleted', 'error');
-        settingsModal.style.display = 'none';
+
+        saveWorkspaces();
+        chrome.storage.local.set({ todos: [] });
+
+        // Re-init (will create default workspace)
+        window.location.reload();
     }
 });
 
@@ -1414,9 +1740,10 @@ window.addEventListener('click', (e) => {
 });
 
 // Share/Export/Import
-shareBtn.addEventListener('click', shareCurrentNote);
-exportSingleBtn.addEventListener('click', exportSingleNote);
-exportAllBtn.addEventListener('click', exportAllNotes);
+// Share/Export/Import
+shareBtn.addEventListener('click', shareCurrentItem);
+exportSingleBtn.addEventListener('click', exportSingleItem);
+exportAllBtn.addEventListener('click', exportAllWorkspaces);
 
 importBtn.addEventListener('click', () => {
     importInput.click();
@@ -1453,30 +1780,40 @@ document.body.addEventListener('drop', (e) => {
 });
 
 // --- Share/Export/Import Logic ---
-async function shareCurrentNote() {
-    if (!activeNoteId) {
-        showNotification('No note selected to share', 'error');
+// --- Share/Export/Import Logic ---
+async function shareCurrentItem() {
+    if (!activeItemId) {
+        showNotification('No item selected to share', 'error');
         return;
     }
 
-    const note = notes.find(n => n.id === activeNoteId);
-    if (!note) return;
+    const item = getItem(activeItemId);
+    if (!item) return;
 
-    // Extract text from Quill Delta format
-    let bodyText = '';
-    if (note.body && typeof note.body === 'object' && note.body.ops) {
-        bodyText = note.body.ops.map(op => op.insert || '').join('');
-    } else if (typeof note.body === 'string') {
-        bodyText = note.body;
+    let shareTitle = item.title || 'Untitled';
+    let shareText = '';
+
+    if (item.type === 'note') {
+        // Extract text from Quill Delta format
+        let bodyText = '';
+        if (item.body && typeof item.body === 'object' && item.body.ops) {
+            bodyText = item.body.ops.map(op => op.insert || '').join('');
+        } else if (typeof item.body === 'string') {
+            bodyText = item.body;
+        }
+        shareText = `${shareTitle}\n\n${bodyText}`;
+    } else if (item.type === 'bookmark') {
+        shareText = `${shareTitle}\n${item.url}`;
+    } else if (item.type === 'credential') {
+        showNotification('Sharing credentials is restricted', 'error');
+        return;
     }
-
-    const shareText = `${note.title ? note.title + '\n\n' : ''}${bodyText}`;
 
     // Try using Web Share API if available
     if (navigator.share) {
         try {
             await navigator.share({
-                title: note.title || 'Untitled Note',
+                title: shareTitle,
                 text: shareText
             });
         } catch (err) {
@@ -1520,39 +1857,39 @@ function fallbackCopy(text) {
     document.body.removeChild(textarea);
 }
 
-function exportSingleNote() {
-    if (!activeNoteId) {
-        showNotification('No note selected to export', 'error');
+function exportSingleItem() {
+    if (!activeItemId) {
+        showNotification('No item selected to export', 'error');
         return;
     }
 
-    const note = notes.find(n => n.id === activeNoteId);
-    if (!note) return;
+    const item = getItem(activeItemId);
+    if (!item) return;
 
     const data = {
-        note: note,
+        item: item,
         exportDate: new Date().toISOString(),
-        version: '1.0'
+        version: '1.2'
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const filename = (note.title || 'Untitled').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const filename = (item.title || 'Untitled').replace(/[^a-z0-9]/gi, '_').toLowerCase();
     a.download = `${filename}-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showNotification('Note exported successfully!', 'success');
+    showNotification('Item exported successfully!', 'success');
 }
 
-function exportAllNotes() {
+function exportAllWorkspaces() {
     const data = {
-        notes: notes,
+        workspaces: workspaces,
         todos: todos,
         exportDate: new Date().toISOString(),
-        version: '1.0'
+        version: '1.2'
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1563,7 +1900,7 @@ function exportAllNotes() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showNotification('Notebook exported successfully!', 'success');
+    showNotification('Backup exported successfully!', 'success');
 }
 
 function importNotebookFile(file) {
@@ -1572,68 +1909,90 @@ function importNotebookFile(file) {
         try {
             const data = JSON.parse(e.target.result);
 
-            // Basic validation - check for single note or multiple notes/todos
-            if (!data.notes && !data.todos && !data.note) {
+            // Basic validation
+            if (!data.workspaces && !data.item && !data.notes && !data.todos && !data.note) {
                 showNotification('Invalid notebook file', 'error');
                 return;
             }
 
-            let importedNotesCount = 0;
-            let importedTodosCount = 0;
+            let importedCount = 0;
+            const currentProj = getCurrentProject();
 
-            // Save current note before importing
-            if (activeNoteId) {
-                updateActiveNote();
+            // 1. Import Workspaces (Full Backup)
+            if (data.workspaces && Array.isArray(data.workspaces)) {
+                // Determine if we should replace or append. 
+                // For simplicity, we append new workspaces if IDs don't collide, or generate new IDs.
+                // Or just push them as new workspaces.
+
+                const newWorkspaces = data.workspaces.map(ws => {
+                    // Regenerate IDs to avoid collisions
+                    const newWsId = 'ws_' + Date.now() + Math.random().toString(36).substr(2, 5);
+                    return {
+                        ...ws,
+                        id: newWsId,
+                        projects: ws.projects.map(p => ({
+                            ...p,
+                            id: 'proj_' + Date.now() + Math.random().toString(36).substr(2, 5)
+                        }))
+                    };
+                });
+
+                workspaces = [...workspaces, ...newWorkspaces];
+                importedCount += newWorkspaces.length;
+                showNotification(`Imported ${newWorkspaces.length} workspaces`, 'success');
             }
 
-            let newNoteId = null;
+            // 2. Import Single Item
+            if (data.item && currentProj) {
+                const newItem = {
+                    ...data.item,
+                    id: Date.now().toString()
+                };
+                currentProj.items.unshift(newItem);
+                importedCount++;
+            }
 
-            // Handle single note import (from export single)
-            if (data.note && typeof data.note === 'object') {
+            // 3. Import Legacy Single Note
+            if (data.note && typeof data.note === 'object' && currentProj) {
                 const newNote = {
                     ...data.note,
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9) // Generate new ID to avoid collisions
+                    id: Date.now().toString(),
+                    type: 'note' // Ensure type
                 };
-                notes = [newNote, ...notes];
-                importedNotesCount = 1;
-                newNoteId = newNote.id; // Store the ID to switch to it
+                currentProj.items.unshift(newNote);
+                importedCount++;
             }
 
-            // Handle multiple notes import (from export all)
-            if (data.notes && Array.isArray(data.notes)) {
-                const newNotes = data.notes.map(note => ({
-                    ...note,
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9) // Generate new ID to avoid collisions
+            // 4. Import Legacy Notes Array
+            if (data.notes && Array.isArray(data.notes) && currentProj) {
+                const newNotes = data.notes.map(n => ({
+                    ...n,
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    type: 'note'
                 }));
-                notes = [...notes, ...newNotes];
-                importedNotesCount = newNotes.length;
+                currentProj.items.unshift(...newNotes);
+                importedCount += newNotes.length;
             }
 
+            // 5. Import Todos
             if (data.todos && Array.isArray(data.todos)) {
                 const newTodos = data.todos.map(todo => ({
                     ...todo,
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9) // Generate new ID
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5) // Generate new ID
                 }));
                 todos = [...todos, ...newTodos];
-                importedTodosCount = newTodos.length;
             }
 
-            await chrome.storage.local.set({ notes, todos });
+            await saveWorkspaces();
+            await chrome.storage.local.set({ todos });
 
             // Re-initialize UI
-            renderNotesList();
+            renderSidebarControls();
+            renderItemsList();
             renderTodoList();
 
-            // If single note was imported, switch to it immediately
-            if (newNoteId) {
-                setActiveNote(newNoteId);
-                showNotification('Imported 1 note successfully!', 'success');
-            } else {
-                // If we imported notes and there were no notes before, select the first one
-                if (notes.length > 0 && !activeNoteId) {
-                    setActiveNote(notes[0].id);
-                }
-                showNotification(`Imported ${importedNotesCount} note${importedNotesCount !== 1 ? 's' : ''} and ${importedTodosCount} to-do${importedTodosCount !== 1 ? 's' : ''} successfully!`, 'success');
+            if (importedCount > 0) {
+                showNotification(`Imported content successfully!`, 'success');
             }
 
         } catch (err) {
@@ -2213,10 +2572,30 @@ if (aiGenerateBtn) {
                 const formatInstruction = " Please provide well-formatted content with a brief title on the first line if appropriate. Use Markdown formatting including code blocks with language tags.";
                 const systemInstruction = baseInstruction + formatInstruction;
 
-                // Ensure we have an active note
-                if (!activeNoteId) {
-                    noteTitleEl.value = 'AI Generated Note';
-                    addNote();
+                // Ensure we have an active note item
+                if (!activeItemId || activeItemType !== 'note') {
+                    // Create new note item in current project
+                    const proj = getCurrentProject();
+                    if (proj) {
+                        const newNote = {
+                            id: Date.now().toString(),
+                            type: 'note',
+                            title: 'AI Generated Note',
+                            body: '',
+                            createdAt: Date.now(),
+                            updatedAt: Date.now()
+                        };
+                        proj.items.unshift(newNote);
+                        activeItemType = 'note'; // Switch to note type view
+                        activeItemId = newNote.id;
+                        saveWorkspaces();
+                        renderItemsList();
+                        renderSidebarControls(); // Update UI to reflect type change if needed
+
+                        // Re-init editor with empty content
+                        noteTitleEl.value = newNote.title;
+                        quill.setText('');
+                    }
                 }
 
                 // Prepare for streaming
@@ -2275,7 +2654,13 @@ if (aiGenerateBtn) {
                             }, 150);
                         }, 100);
 
-                        updateActiveNote();
+                        // Trigger save
+                        const item = getItem(activeItemId);
+                        if (item) {
+                            item.body = quill.getContents();
+                            saveWorkspaces();
+                        }
+
                         showNotification('Note added successfully!', 'success');
                         aiPromptInput.value = '';
                     },
@@ -2356,16 +2741,30 @@ if (aiGenerateBtn) {
 }
 
 // Stream note directly to editor (no preview)
+// Stream note directly to editor (no preview)
 function streamNoteToEditor(title, content) {
-    // Ensure we have an active note
-    if (!activeNoteId) {
-        // Create a new note
-        const newTitle = title || 'AI Generated Note';
-        noteTitleEl.value = newTitle;
-        addNote();
+    let item = getItem(activeItemId);
+
+    // Ensure we have an active note item
+    if (!item || activeItemType !== 'note') {
+        createNewItem(); // Creates a note by default currently or based on default
+        // Force type to note if createNewItem defaults to something else (though it defaults to activeItemType)
+        item = getItem(activeItemId);
+
+        // If we are still not in a note (e.g. user selected bookmark tab), we need to handle that
+        if (item.type !== 'note') {
+            // For simplicity, just error or try to find a note
+            showNotification('Please select a Note to use AI generation', 'error');
+            return;
+        }
+
+        if (title) {
+            item.title = title;
+            noteTitleEl.value = title;
+        }
     } else if (title && !noteTitleEl.value.trim()) {
-        // Update title if current note has no title
         noteTitleEl.value = title;
+        item.title = title;
     }
 
     // Insert content at the end of the editor
@@ -2383,7 +2782,11 @@ function streamNoteToEditor(title, content) {
             }, 150);
         }, 100);
 
-        updateActiveNote();
+        // Save
+        item.body = quill.getContents();
+        saveWorkspaces();
+        renderItemsList();
+
         showNotification('Note added successfully!', 'success');
     }
 
@@ -2392,11 +2795,16 @@ function streamNoteToEditor(title, content) {
 }
 
 // Apply button handler for preview mode
+// Apply button handler for preview mode
 if (aiApplyBtn) {
     aiApplyBtn.addEventListener('click', () => {
         const title = aiPreviewSection.dataset.title;
         const content = aiPreviewSection.dataset.content;
-        const outputType = aiPreviewSection.dataset.outputType;
+
+        if (activeItemType !== 'note') {
+            showNotification('Can only apply text to Notes', 'error');
+            return;
+        }
 
         // Always append content
         if (content) {
@@ -2409,8 +2817,11 @@ if (aiApplyBtn) {
             quill.insertText(currentLength - 1, separator + content);
         }
 
-        // Only update title if it's a new note or empty title
-        if (title && (!activeNoteId || !noteTitleEl.value.trim())) {
+        const item = getItem(activeItemId);
+
+        // Only update title if empty
+        if (title && item && (!item.title || !item.title.trim())) {
+            item.title = title;
             noteTitleEl.value = title;
         }
 
@@ -2423,7 +2834,12 @@ if (aiApplyBtn) {
             }, 150);
         }, 100);
 
-        updateActiveNote();
+        if (item) {
+            item.body = quill.getContents();
+            saveWorkspaces();
+            renderItemsList();
+        }
+
         showNotification('Content appended to note!', 'success');
 
         aiPromptInput.value = '';
@@ -3123,10 +3539,18 @@ if (aiGenerateBtn && aiPromptInput) {
         }
 
         // Ensure we have an active note
-        if (!activeNoteId) {
+        let item = getItem(activeItemId);
+        if (!item || activeItemType !== 'note') {
             // Create a new note for chat
-            noteTitleEl.value = 'AI Chat - ' + new Date().toLocaleString();
-            addNote();
+            createNewItem();
+            // Force title update
+            item = getItem(activeItemId);
+            if (item) {
+                item.title = 'AI Chat - ' + new Date().toLocaleString();
+                noteTitleEl.value = item.title;
+                saveWorkspaces();
+                renderItemsList();
+            }
         }
 
         // Add user message

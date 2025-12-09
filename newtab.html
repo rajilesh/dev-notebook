@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,20 +12,59 @@
     <link rel="stylesheet" href="css/vs2015.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="app-container">
         <aside class="sidebar">
-            <div class="sidebar-header">
+            <div class="sidebar-header-composed">
+                <div class="ws-controls">
+                    <select id="workspace-select" class="nav-select" title="Select Workspace"></select>
+                    <button id="add-workspace-btn" class="icon-btn small" title="New Workspace">
+                        <span class="material-icons">add_circle_outline</span>
+                    </button>
+                    <button id="edit-workspace-btn" class="icon-btn small" title="Rename Workspace">
+                        <span class="material-icons">edit</span>
+                    </button>
+                    <button id="delete-workspace-btn" class="icon-btn small danger" title="Delete Workspace">
+                        <span class="material-icons">delete</span>
+                    </button>
+                </div>
+                <div class="ws-controls">
+                    <select id="project-select" class="nav-select" title="Select Project"></select>
+                    <button id="add-project-btn" class="icon-btn small" title="New Project">
+                        <span class="material-icons">create_new_folder</span>
+                    </button>
+                    <button id="edit-project-btn" class="icon-btn small" title="Rename Project">
+                        <span class="material-icons">edit</span>
+                    </button>
+                    <button id="delete-project-btn" class="icon-btn small danger" title="Delete Project">
+                        <span class="material-icons">delete</span>
+                    </button>
+                </div>
+
+                <div class="resource-tabs">
+                    <button class="tab-btn active" data-type="note" title="Notes">
+                        <span class="material-icons">description</span>
+                    </button>
+                    <button class="tab-btn" data-type="bookmark" title="Bookmarks">
+                        <span class="material-icons">bookmarks</span>
+                    </button>
+                    <button class="tab-btn" data-type="credential" title="Credentials">
+                        <span class="material-icons">password</span>
+                    </button>
+                </div>
+
                 <div class="search-box">
                     <span class="material-icons search-icon">search</span>
-                    <input type="text" id="search-input" placeholder="Search notes...">
+                    <input type="text" id="search-input" placeholder="Search...">
                 </div>
-                <button id="add-note-btn" class="icon-btn" title="Create New Note">
+                <button id="add-item-btn" class="icon-btn" title="Create New Item">
                     <span class="material-icons">add</span>
                 </button>
             </div>
-            <ul id="notes-list" class="notes-list">
-                </ul>
+            <ul id="items-list" class="notes-list">
+                <!-- Items (Notes/Bookmarks/Credentials) will be injected here -->
+            </ul>
         </aside>
 
         <main class="editor">
@@ -62,7 +102,71 @@
                     </button>
                 </div>
             </div>
-            <div id="editor-content" class="editor-content"></div>
+            <!-- Note Editor (Quill) -->
+            <div id="editor-content" class="editor-content view-pane"></div>
+
+            <!-- Bookmark Editor -->
+            <div id="bookmark-editor" class="view-pane hidden" style="padding: 40px;">
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" id="bookmark-title-input" class="input-field large"
+                        placeholder="Figma Design System">
+                </div>
+                <div class="form-group">
+                    <label>URL</label>
+                    <div class="input-with-icon">
+                        <input type="url" id="bookmark-url-input" class="input-field"
+                            placeholder="https://figma.com/file/...">
+                        <button id="visit-bookmark-btn" class="icon-btn" title="Open Link">
+                            <span class="material-icons">open_in_new</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Description (Optional)</label>
+                    <textarea id="bookmark-desc-input" class="input-field" rows="4"
+                        placeholder="Description..."></textarea>
+                </div>
+                <button id="save-bookmark-btn" class="btn primary">Save Bookmark</button>
+            </div>
+
+            <!-- Credential Editor -->
+            <div id="credential-editor" class="view-pane hidden" style="padding: 40px;">
+                <div class="form-group">
+                    <label>Title / Service Name</label>
+                    <input type="text" id="credential-title-input" class="input-field large"
+                        placeholder="GitHub Production">
+                </div>
+                <div class="form-group">
+                    <label>Username / Email</label>
+                    <div class="input-with-icon">
+                        <input type="text" id="credential-username-input" class="input-field"
+                            placeholder="user@example.com">
+                        <button class="icon-btn copy-btn" data-target="credential-username-input">
+                            <span class="material-icons">content_copy</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <div class="input-with-icon">
+                        <input type="password" id="credential-password-input" class="input-field"
+                            placeholder="Password">
+                        <button class="icon-btn" id="toggle-password-visibility">
+                            <span class="material-icons">visibility</span>
+                        </button>
+                        <button class="icon-btn copy-btn" data-target="credential-password-input">
+                            <span class="material-icons">content_copy</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea id="credential-notes-input" class="input-field" rows="4"
+                        placeholder="Additional details..."></textarea>
+                </div>
+                <button id="save-credential-btn" class="btn primary">Save Credential</button>
+            </div>
         </main>
 
         <aside class="todo-sidebar">
@@ -103,7 +207,7 @@
     <button id="fab-add-note" class="fab-btn" title="Create New Note">
         <span class="material-icons">add</span>
     </button>
-    
+
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal">
         <div class="modal-content">
@@ -116,14 +220,17 @@
             <div class="modal-body">
                 <div class="settings-section">
                     <h3>System Instructions</h3>
-                    <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">Define how the AI should behave (e.g., "You are a helpful assistant").</p>
-                    <textarea id="system-instruction" class="input-field" rows="3" placeholder="You are a helpful assistant that generates notes..."></textarea>
+                    <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">Define how the AI should behave
+                        (e.g., "You are a helpful assistant").</p>
+                    <textarea id="system-instruction" class="input-field" rows="3"
+                        placeholder="You are a helpful assistant that generates notes..."></textarea>
                 </div>
 
                 <div class="settings-section">
                     <h3>AI Providers</h3>
-                    <p class="text-muted" style="font-size: 12px; margin-bottom: 15px;">Enable the providers you want to use and enter their API keys.</p>
-                    
+                    <p class="text-muted" style="font-size: 12px; margin-bottom: 15px;">Enable the providers you want to
+                        use and enter their API keys.</p>
+
                     <!-- OpenAI -->
                     <div class="provider-group">
                         <div class="provider-header">
@@ -162,7 +269,8 @@
                             </label>
                         </div>
                         <div id="anthropic-key-container" class="key-container hidden">
-                            <input type="password" id="settings-anthropic-key" class="input-field" placeholder="sk-ant-...">
+                            <input type="password" id="settings-anthropic-key" class="input-field"
+                                placeholder="sk-ant-...">
                         </div>
                     </div>
 
@@ -232,7 +340,8 @@
                             </label>
                         </div>
                         <div id="huggingface-key-container" class="key-container hidden">
-                            <input type="password" id="settings-huggingface-key" class="input-field" placeholder="hf_...">
+                            <input type="password" id="settings-huggingface-key" class="input-field"
+                                placeholder="hf_...">
                         </div>
                     </div>
 
@@ -264,12 +373,14 @@
                         </div>
                     </div>
 
-                    <button id="save-settings-btn" class="btn primary full-width" style="margin-top: 20px;">Save Settings</button>
+                    <button id="save-settings-btn" class="btn primary full-width" style="margin-top: 20px;">Save
+                        Settings</button>
                 </div>
-                
+
                 <div class="settings-section">
                     <h3>AI Snippets</h3>
-                    <p class="text-muted" style="font-size: 12px; margin-bottom: 15px;">Customize snippets that appear when you type / in the AI textarea.</p>
+                    <p class="text-muted" style="font-size: 12px; margin-bottom: 15px;">Customize snippets that appear
+                        when you type / in the AI textarea.</p>
                     <div id="snippets-list" class="snippets-list"></div>
                     <button id="add-snippet-btn" class="btn" style="margin-top: 10px; width: 100%;">
                         <span class="material-icons" style="font-size: 16px; vertical-align: middle;">add</span>
@@ -307,7 +418,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Load Quill.js and highlight.js before our script -->
     <!-- AI Assistant Dock -->
     <div id="ai-dock" class="ai-dock">
@@ -365,14 +476,16 @@
             </div>
             <div class="ai-prompt-container">
                 <div id="ai-chat-attachments" class="ai-chat-attachments hidden"></div>
-                <textarea id="ai-prompt" class="ai-prompt-input" placeholder="Ask AI to write something... (Type / for snippets)" rows="3"></textarea>
+                <textarea id="ai-prompt" class="ai-prompt-input"
+                    placeholder="Ask AI to write something... (Type / for snippets)" rows="3"></textarea>
                 <div id="ai-snippets-menu" class="snippets-menu hidden"></div>
             </div>
 
             <!-- Chat Mode UI -->
             <div id="ai-chat-container" class="ai-chat-container hidden">
                 <div id="ai-chat-messages" class="ai-chat-messages">
-                    <button id="ai-chat-clear-btn" class="chat-clear-btn icon-btn small hidden" title="Clear Chat History">
+                    <button id="ai-chat-clear-btn" class="chat-clear-btn icon-btn small hidden"
+                        title="Clear Chat History">
                         <span class="material-icons">delete_sweep</span>
                     </button>
                 </div>
@@ -383,7 +496,8 @@
                         <button id="ai-chat-attach-btn" class="icon-btn small" title="Attach Image/Video">
                             <span class="material-icons">attach_file</span>
                         </button>
-                        <textarea id="ai-chat-input" class="ai-chat-input" placeholder="Type your message... (Type / for snippets)" rows="1"></textarea>
+                        <textarea id="ai-chat-input" class="ai-chat-input"
+                            placeholder="Type your message... (Type / for snippets)" rows="1"></textarea>
                         <button id="ai-chat-send-btn" class="icon-btn small" title="Send Message">
                             <span class="material-icons">send</span>
                         </button>
@@ -391,11 +505,13 @@
                 </div>
             </div>
 
-            <div id="ai-loading" class="hidden" style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-muted);">
+            <div id="ai-loading" class="hidden"
+                style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-muted);">
                 <span class="material-icons spin" style="font-size: 14px;">refresh</span> Generating...
             </div>
-            
-            <div id="ai-error" class="error-message hidden" style="color: var(--danger); margin-top: 5px; font-size: 12px;"></div>
+
+            <div id="ai-error" class="error-message hidden"
+                style="color: var(--danger); margin-top: 5px; font-size: 12px;"></div>
 
             <div id="ai-preview-section" class="hidden">
                 <div class="preview-header">
@@ -464,7 +580,8 @@
                         <span class="material-icons">info</span>
                         <span id="media-provider-text">Using: DALL-E 3</span>
                     </div>
-                    <textarea id="media-prompt-input" class="media-prompt-input" placeholder="Describe what you want to generate..." rows="4"></textarea>
+                    <textarea id="media-prompt-input" class="media-prompt-input"
+                        placeholder="Describe what you want to generate..." rows="4"></textarea>
                     <div class="media-options">
                         <div class="media-option-group" id="image-options">
                             <label>Size:</label>
@@ -505,4 +622,5 @@
     <script src="js/ai-providers.js"></script>
     <script src="script.js"></script>
 </body>
+
 </html>
