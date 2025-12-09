@@ -712,16 +712,13 @@ function handleMarkdownShortcuts(quill, text, lineStart, offset) {
 
 async function init() {
     const data = await chrome.storage.local.get(['notes', 'todos', 'theme']);
-    
-    // Always start with a fresh notebook - clear previous notes
-    notes = [];
+
+    // Load notes from storage
+    notes = data.notes || [];
     todos = data.todos || [];
     currentTheme = data.theme || 'system';
 
-    // Clear notes from storage to start fresh
-    await chrome.storage.local.set({ notes: [] });
-
-    // Initialize Notes - Create a new note for the fresh session
+    // Initialize Notes - Always show a blank note
     renderNotesList();
     createNewNote();
 
@@ -917,10 +914,12 @@ function setActiveNote(id) {
         const prevNoteIndex = notes.findIndex(n => n.id === activeNoteId);
         if (prevNoteIndex !== -1) {
             const prevNote = notes[prevNoteIndex];
-            if (isNoteEmpty(prevNote)) {
-                notes.splice(prevNoteIndex, 1);
-                saveNotes();
-            }
+            // if (isNoteEmpty(prevNote)) {
+            //     notes.splice(prevNoteIndex, 1);
+            //     saveNotes();
+            // }
+            // notes.splice(prevNoteIndex, 1);
+            saveNotes();
         }
     }
 
@@ -960,9 +959,8 @@ function setActiveNote(id) {
 }
 
 function saveNotes() {
-    // Filter out empty notes before saving to storage
-    const validNotes = notes.filter(n => !isNoteEmpty(n));
-    chrome.storage.local.set({ notes: validNotes });
+    // Save all notes to storage (including empty ones for proper syncing)
+    chrome.storage.local.set({ notes: notes });
 }
 
 function renderNotesList() {
@@ -2035,7 +2033,7 @@ if (aiPromptInput) {
         const beforeSlash = text.substring(0, lastSlashIndex);
         const afterCursor = text.substring(cursorPos);
 
-        aiPromptInput.value = beforeSlash + snippet.text +'\n' + afterCursor;
+        aiPromptInput.value = beforeSlash + snippet.text + '\n' + afterCursor;
         const newCursorPos = beforeSlash.length + snippet.text.length + 1;
         aiPromptInput.setSelectionRange(newCursorPos, newCursorPos);
         aiPromptInput.focus();
