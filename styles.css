@@ -2746,3 +2746,43 @@ body.light-mode .media-provider-info {
 .sidebar-header-composed .search-box {
     margin-top: 5px;
 }
+
+/* --- Accessibilty / Form Fixes --- */
+.input-with-icon {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    background-color: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    transition: border-color 0.2s;
+}
+
+.input-with-icon:focus-within {
+    border-color: var(--accent);
+}
+
+.input-with-icon .input-field {
+    flex: 1;
+    border: none; /* Override standard input-field border */
+    background: transparent;
+    box-shadow: none;
+    margin: 0;
+}
+
+.input-with-icon .input-field:focus {
+    border: none;
+    box-shadow: none;
+}
+
+.input-with-icon .icon-btn {
+    padding: 8px;
+    color: var(--text-muted);
+    margin-right: 4px;
+    display: flex; /* Ensure centering */
+}
+
+.input-with-icon .icon-btn:hover {
+    color: var(--text-main);
+    background-color: rgba(255, 255, 255, 0.1);
+}
