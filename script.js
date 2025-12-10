@@ -1124,8 +1124,15 @@ function openItemEditor(id) {
 
     if (!item) return;
 
+    // Get the Quill toolbar element
+    const quillToolbar = document.querySelector('.ql-toolbar');
+
     if (item.type === 'note') {
         document.getElementById('editor-content').classList.remove('hidden');
+        // Show toolbar for notes
+        if (quillToolbar) {
+            quillToolbar.style.display = 'block';
+        }
         noteTitleEl.value = item.title || '';
         if (quill) {
             // ... (reuse existing quill set logic)
@@ -1142,11 +1149,19 @@ function openItemEditor(id) {
         }
     } else if (item.type === 'bookmark') {
         bookmarkEditor.classList.remove('hidden');
+        // Hide toolbar for bookmarks
+        if (quillToolbar) {
+            quillToolbar.style.display = 'none';
+        }
         bookmarkTitleInput.value = item.title || '';
         bookmarkUrlInput.value = item.url || '';
         bookmarkDescInput.value = item.description || '';
     } else if (item.type === 'credential') {
         credentialEditor.classList.remove('hidden');
+        // Hide toolbar for credentials
+        if (quillToolbar) {
+            quillToolbar.style.display = 'none';
+        }
         credentialTitleInput.value = item.title || '';
         credentialUsernameInput.value = item.username || '';
         credentialPasswordInput.value = item.password || '';
