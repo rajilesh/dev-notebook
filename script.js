@@ -3362,7 +3362,7 @@ if (aiTypeSelect) {
 
         if (outputType === 'chat') {
             // Chat mode uses standard prompt but displays in note editor
-            aiChatContainer.classList.add('hidden');
+            aiChatContainer.classList.remove('hidden');
             aiPreviewSection.classList.add('hidden');
             aiTodosPreviewSection.classList.add('hidden');
             aiLoading.classList.add('hidden');
@@ -3613,10 +3613,19 @@ function addStreamingIndicator() {
     return insertPosition + insertText.length - 3; // Return position before '...'
 }
 
+// Helper function to update active note
+function updateActiveNote() {
+    const item = getItem(activeItemId);
+    if (item && item.type === 'note') {
+        item.body = quill.getContents();
+        saveWorkspaces();
+    }
+}
+
 // Send chat message
-if (aiGenerateBtn && aiPromptInput) {
-    const sendChatMessage = async () => {
-        const message = aiPromptInput.value.trim();
+if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
+    const sendChatMessage = async (messagePayload = null) => {
+        const message = messagePayload !== null ? messagePayload : (aiChatInput && !aiChatInput.closest('.hidden') ? aiChatInput.value.trim() : aiPromptInput.value.trim());
         if (!message && chatAttachedFiles.length === 0) return;
         if (isStreamingChat) return;
 
@@ -3737,6 +3746,7 @@ if (aiGenerateBtn && aiPromptInput) {
 
         // Clear input and attachments
         aiPromptInput.value = '';
+        if (aiChatInput) aiChatInput.value = '';
         chatAttachedFiles = [];
         renderChatAttachments();
 
@@ -3785,7 +3795,7 @@ if (aiGenerateBtn && aiPromptInput) {
 
                     streamedText += chunk;
 
-                    // Scroll to show new content
+                    // Scroll to bottom
                     quill.setSelection(streamPosition, 0);
                     updateActiveNote();
                 },
@@ -3797,9 +3807,6 @@ if (aiGenerateBtn && aiPromptInput) {
                     }
 
                     chatHistory.push({ role: 'assistant', content: fullText });
-                    isStreamingChat = false;
-                    aiGenerateBtn.disabled = false;
-
                     // Trigger code formatting after streaming completes
                     setTimeout(() => {
                         scanAndFormatCodeBlocks(quill);
@@ -3811,16 +3818,46 @@ if (aiGenerateBtn && aiPromptInput) {
                 // onError
                 (error) => {
                     showNotification('Chat error: ' + error.message, 'error');
-                    isStreamingChat = false;
-                    aiGenerateBtn.disabled = false;
                 }
             );
         } catch (error) {
             showNotification('Chat error: ' + error.message, 'error');
+        } finally {
             isStreamingChat = false;
             aiGenerateBtn.disabled = false;
         }
     };
+
+    // Update aiTypeSelect listener to show/hide chat container
+    if (aiTypeSelect && aiChatContainer) {
+        aiTypeSelect.addEventListener('change', () => {
+            if (aiTypeSelect.value === 'chat') {
+                aiChatContainer.classList.remove('hidden');
+                aiPromptContainer.classList.add('hidden');
+            } else {
+                aiChatContainer.classList.add('hidden');
+                aiPromptContainer.classList.remove('hidden');
+            }
+        });
+    }
+
+    // Wire up dedicated Chat UI listeners
+    if (aiChatSendBtn) {
+        aiChatSendBtn.addEventListener('click', () => {
+            const msg = aiChatInput.value.trim();
+            if (msg || chatAttachedFiles.length > 0) sendChatMessage(msg);
+        });
+    }
+
+    if (aiChatInput) {
+        aiChatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const msg = aiChatInput.value.trim();
+                if (msg || chatAttachedFiles.length > 0) sendChatMessage(msg);
+            }
+        });
+    }
 
     // Add to existing generate button click handler
     const originalGenerateHandler = aiGenerateBtn.onclick;
