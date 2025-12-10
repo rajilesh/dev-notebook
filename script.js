@@ -771,7 +771,7 @@ function handleMarkdownShortcuts(quill, text, lineStart, offset) {
 }
 
 async function init() {
-    const data = await chrome.storage.local.get(['workspaces', 'notes', 'todos', 'theme', 'activeWorkspaceId', 'activeProjectId', 'activeItemType']);
+    const data = await chrome.storage.local.get(['workspaces', 'notes', 'todos', 'theme', 'activeWorkspaceId', 'activeProjectId', 'activeItemType', 'aiDockVisible', 'chatHistory']);
 
     // Theme
     currentTheme = data.theme || 'system';
@@ -833,6 +833,24 @@ async function init() {
                 btn.classList.remove('active');
             }
         });
+    }
+
+    // Restore AI dock visibility state
+    if (data.aiDockVisible !== undefined && aiDock) {
+        if (data.aiDockVisible) {
+            aiDock.style.display = 'block';
+            if (aiToggleBtn) aiToggleBtn.classList.add('active');
+        } else {
+            aiDock.style.display = 'none';
+            if (aiToggleBtn) aiToggleBtn.classList.remove('active');
+        }
+    }
+
+    // Restore chat history
+    if (data.chatHistory && Array.isArray(data.chatHistory)) {
+        chatHistory = data.chatHistory;
+        // Re-render chat messages if in chat mode
+        renderChatHistory();
     }
 
     // Render UI
@@ -1865,12 +1883,15 @@ toggleSidebarBtn.addEventListener('click', () => {
 const aiToggleBtn = document.getElementById('ai-toggle-btn');
 if (aiToggleBtn && aiDock) {
     aiToggleBtn.addEventListener('click', () => {
-        if (aiDock.style.display === 'none' || aiDock.style.display === '') {
+        const isVisible = aiDock.style.display !== 'none' && aiDock.style.display !== '';
+        if (!isVisible) {
             aiDock.style.display = 'block';
             aiToggleBtn.classList.add('active');
+            chrome.storage.local.set({ aiDockVisible: true });
         } else {
             aiDock.style.display = 'none';
             aiToggleBtn.classList.remove('active');
+            chrome.storage.local.set({ aiDockVisible: false });
         }
     });
 }
@@ -3703,6 +3724,47 @@ function updateActiveNote() {
     }
 }
 
+// Save chat history to storage
+function saveChatHistory() {
+    chrome.storage.local.set({ chatHistory: chatHistory });
+}
+
+// Render chat history (on page load)
+function renderChatHistory() {
+    if (!chatHistory || chatHistory.length === 0) return;
+
+    // Only render if we're in chat mode or have chat history
+    const currentLength = quill.getLength();
+    let insertPosition = currentLength > 1 ? currentLength - 1 : 0;
+
+    // Render each message in the history
+    chatHistory.forEach((entry, index) => {
+        if (entry.role === 'user') {
+            const userText = typeof entry.content === 'string' ? entry.content :
+                (Array.isArray(entry.content) ?
+                    entry.content.find(c => c.text || c.type === 'text')?.text || '[Message with attachments]' :
+                    '[Message]');
+            quill.insertText(insertPosition, `\n\n👤 You:\n${userText}`, 'user');
+            insertPosition = quill.getLength() - 1;
+        } else if (entry.role === 'assistant') {
+            quill.insertText(insertPosition, '\n\n🤖 Assistant:\n');
+            insertPosition = quill.getLength() - 1;
+            const lines = entry.content.split('\n');
+            lines.forEach(line => {
+                insertPosition = insertMarkdownLine(quill, insertPosition, line);
+                insertPosition = insertMarkdownLine(quill, insertPosition, '\n');
+            });
+        }
+    });
+
+    // Trigger code formatting after rendering
+    setTimeout(() => {
+        scanAndFormatCodeBlocks(quill);
+        highlightCodeBlocks();
+    }, 100);
+}
+
+
 // Send chat message
 if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
     const sendChatMessage = async (messagePayload = null) => {
@@ -3824,6 +3886,7 @@ if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
 
         // Add to history
         chatHistory.push({ role: 'user', content: userContent });
+        saveChatHistory();
 
         // Clear input and attachments
         aiPromptInput.value = '';
@@ -3888,6 +3951,7 @@ if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
                     }
 
                     chatHistory.push({ role: 'assistant', content: fullText });
+                    saveChatHistory();
                     // Trigger code formatting after streaming completes
                     setTimeout(() => {
                         scanAndFormatCodeBlocks(quill);
@@ -3956,6 +4020,7 @@ function clearChatHistory() {
     chatHistory = [];
     chatAttachedFiles = [];
     renderChatAttachments();
+    saveChatHistory();
 }
 
 // --- AI Modal Drag Logic Removed (Fixed Bottom Layout) ---
