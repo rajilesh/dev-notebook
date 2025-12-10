@@ -65,6 +65,22 @@
             <ul id="items-list" class="notes-list">
                 <!-- Items (Notes/Bookmarks/Credentials) will be injected here -->
             </ul>
+            <div class="sidebar-footer">
+                <div class="quick-access-btns"
+                    style="display: flex; justify-content: space-around; align-items: center;">
+                    <button id="quick-note-btn" class="icon-btn" title="Quick Access: Notes" data-type="note">
+                        <span class="material-icons">description</span>
+                    </button>
+                    <button id="quick-bookmark-btn" class="icon-btn" title="Quick Access: Bookmarks"
+                        data-type="bookmark">
+                        <span class="material-icons">bookmarks</span>
+                    </button>
+                    <button id="quick-credential-btn" class="icon-btn" title="Quick Access: Credentials"
+                        data-type="credential">
+                        <span class="material-icons">password</span>
+                    </button>
+                </div>
+            </div>
         </aside>
 
         <main class="editor">
@@ -88,6 +104,9 @@
                         <span class="material-icons">file_upload</span>
                     </button>
                     <input type="file" id="import-input" accept=".json" style="display: none;">
+                    <button id="ai-toggle-btn" class="icon-btn" title="Toggle AI Assistant">
+                        <span class="material-icons">auto_awesome</span>
+                    </button>
                     <button id="theme-toggle-btn" class="icon-btn" title="Toggle Theme">
                         <span class="material-icons">brightness_auto</span>
                     </button>

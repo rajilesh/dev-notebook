@@ -771,7 +771,7 @@ function handleMarkdownShortcuts(quill, text, lineStart, offset) {
 }
 
 async function init() {
-    const data = await chrome.storage.local.get(['workspaces', 'notes', 'todos', 'theme', 'activeWorkspaceId', 'activeProjectId']);
+    const data = await chrome.storage.local.get(['workspaces', 'notes', 'todos', 'theme', 'activeWorkspaceId', 'activeProjectId', 'activeItemType']);
 
     // Theme
     currentTheme = data.theme || 'system';
@@ -822,6 +822,19 @@ async function init() {
         }
     }
 
+    // Restore active item type
+    if (data.activeItemType) {
+        activeItemType = data.activeItemType;
+        // Update tab buttons to reflect active type
+        resourceTabs.forEach(btn => {
+            if (btn.dataset.type === activeItemType) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
     // Render UI
     renderSidebarControls();
     renderItemsList();
@@ -846,7 +859,8 @@ async function saveWorkspaces() {
     await chrome.storage.local.set({
         workspaces: workspaces,
         activeWorkspaceId: activeWorkspaceId,
-        activeProjectId: activeProjectId
+        activeProjectId: activeProjectId,
+        activeItemType: activeItemType
     });
 }
 
@@ -931,11 +945,19 @@ function renderItemsList() {
         }
 
         if (match) {
+            // Add open link button for bookmarks
+            const openLinkBtn = item.type === 'bookmark' ? `
+                <button class="note-item-open-link-btn" title="Open Link">
+                    <span class="material-icons">open_in_new</span>
+                </button>
+            ` : '';
+
             li.innerHTML = `
                 <div class="note-item-content">
                     <div class="note-item-title">${escapeHtml(title)}</div>
                     <div class="note-item-preview">${escapeHtml(subText)}</div>
                 </div>
+                ${openLinkBtn}
                 <button class="note-item-delete-btn" title="Delete">
                     <span class="material-icons">close</span>
                 </button>
@@ -948,6 +970,19 @@ function renderItemsList() {
 
                 handleItemClick(e, item.id, filteredItems);
             });
+
+            // Open Link Handler (for bookmarks)
+            if (item.type === 'bookmark') {
+                const openLinkBtn = li.querySelector('.note-item-open-link-btn');
+                if (openLinkBtn) {
+                    openLinkBtn.addEventListener('click', (e) => {
+                        e.stopPropagation(); // Prevent item selection
+                        if (item.url) {
+                            window.open(item.url, '_blank');
+                        }
+                    });
+                }
+            }
 
             // Delete Handler
             const deleteBtn = li.querySelector('.note-item-delete-btn');
@@ -1198,6 +1233,7 @@ resourceTabs.forEach(btn => {
         resourceTabs.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeItemType = btn.dataset.type;
+        saveWorkspaces(); // Save state immediately
         renderItemsList();
         // Try to select first item of new type
         const proj = getCurrentProject();
@@ -1209,6 +1245,36 @@ resourceTabs.forEach(btn => {
     });
 });
 
+// Quick Access Buttons (Sidebar Footer)
+const quickNoteBtn = document.getElementById('quick-note-btn');
+const quickBookmarkBtn = document.getElementById('quick-bookmark-btn');
+const quickCredentialBtn = document.getElementById('quick-credential-btn');
+
+[quickNoteBtn, quickBookmarkBtn, quickCredentialBtn].forEach(btn => {
+    if (btn) {
+        btn.addEventListener('click', () => {
+            const type = btn.dataset.type;
+            // Update main resource tabs
+            resourceTabs.forEach(tab => {
+                if (tab.dataset.type === type) {
+                    tab.classList.add('active');
+                } else {
+                    tab.classList.remove('active');
+                }
+            });
+            activeItemType = type;
+            saveWorkspaces(); // Save state immediately
+            renderItemsList();
+            // Try to select first item of new type
+            const proj = getCurrentProject();
+            if (proj) {
+                const first = proj.items.find(i => i.type === activeItemType);
+                if (first) setActiveItem(first.id);
+                else createNewItem();
+            }
+        });
+    }
+});
 
 // --- Edit/Delete Workspace & Project Listeners ---
 
@@ -1794,6 +1860,21 @@ function applyTheme(theme) {
 toggleSidebarBtn.addEventListener('click', () => {
     appContainer.classList.toggle('sidebar-open');
 });
+
+// AI Toggle Button
+const aiToggleBtn = document.getElementById('ai-toggle-btn');
+if (aiToggleBtn && aiDock) {
+    aiToggleBtn.addEventListener('click', () => {
+        if (aiDock.style.display === 'none' || aiDock.style.display === '') {
+            aiDock.style.display = 'block';
+            aiToggleBtn.classList.add('active');
+        } else {
+            aiDock.style.display = 'none';
+            aiToggleBtn.classList.remove('active');
+        }
+    });
+}
+
 
 
 // Search Listener

@@ -1082,6 +1082,20 @@ body {
     background: rgba(255, 107, 107, 0.1);
 }
 
+#ai-toggle-btn {
+    position: relative;
+}
+
+#ai-toggle-btn:hover {
+    background: rgba(14, 99, 156, 0.2);
+    color: var(--accent);
+}
+
+#ai-toggle-btn.active {
+    background: var(--accent);
+    color: white;
+}
+
 #note-body {
     flex-grow: 1;
     background: transparent;
@@ -1205,6 +1219,29 @@ body.drag-over::before {
 
 .settings-btn:hover {
     background-color: var(--item-active);
+}
+
+.quick-access-btns {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    gap: 10px;
+}
+
+.quick-access-btns .icon-btn {
+    flex: 1;
+    padding: 10px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.quick-access-btns .icon-btn:hover {
+    background-color: var(--accent);
+    transform: scale(1.05);
+}
+
+.quick-access-btns .icon-btn .material-icons {
+    font-size: 22px;
 }
 
 /* --- Modal Styles --- */
@@ -2656,6 +2693,7 @@ body.light-mode .media-provider-info {
     cursor: not-allowed;
     transform: none !important;
 }
+
 /* --- Workspace/Project Controls --- */
 .ws-controls {
     display: flex;
@@ -2764,7 +2802,8 @@ body.light-mode .media-provider-info {
 
 .input-with-icon .input-field {
     flex: 1;
-    border: none; /* Override standard input-field border */
+    border: none;
+    /* Override standard input-field border */
     background: transparent;
     box-shadow: none;
     margin: 0;
@@ -2779,7 +2818,8 @@ body.light-mode .media-provider-info {
     padding: 8px;
     color: var(--text-muted);
     margin-right: 4px;
-    display: flex; /* Ensure centering */
+    display: flex;
+    /* Ensure centering */
 }
 
 .input-with-icon .icon-btn:hover {
@@ -2793,7 +2833,8 @@ body.light-mode .media-provider-info {
     justify-content: space-between;
     align-items: center;
     position: relative;
-    padding-right: 35px !important; /* Make room for delete btn */
+    padding-right: 35px !important;
+    /* Make room for delete btn */
 }
 
 /* Container for text content to ensure it takes available space */
@@ -2817,7 +2858,8 @@ body.light-mode .media-provider-info {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    opacity: 0; /* Hidden by default */
+    opacity: 0;
+    /* Hidden by default */
     transition: opacity 0.2s, background-color 0.2s, color 0.2s;
     z-index: 10;
 }
@@ -2835,9 +2877,44 @@ body.light-mode .media-provider-info {
     font-size: 16px;
 }
 
+/* Open Link Button (for bookmarks) */
+.note-item-open-link-btn {
+    position: absolute;
+    right: 35px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, background-color 0.2s, color 0.2s;
+    z-index: 10;
+}
+
+.note-item:hover .note-item-open-link-btn {
+    opacity: 1;
+}
+
+.note-item-open-link-btn:hover {
+    background-color: rgba(14, 99, 156, 0.2);
+    color: var(--accent);
+}
+
+.note-item-open-link-btn .material-icons {
+    font-size: 16px;
+}
+
 /* Multi-selection styles */
 .note-item.selected {
-    background-color: rgba(14, 99, 156, 0.2); /* Light accent background */
+    background-color: rgba(14, 99, 156, 0.2);
+    /* Light accent background */
     border-left: 3px solid rgba(14, 99, 156, 0.5);
 }
 
