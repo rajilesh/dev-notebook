@@ -444,7 +444,11 @@
                 ctx.save();
                 const effects = ensureLayerEffects(layer);
                 const layerBlur = effects.blur || 0;
-                ctx.filter = layerBlur ? `${baseFilter} blur(${layerBlur}px)` : baseFilter;
+                const isActive = layer.id === activeLayerId;
+                const layerFilter = isActive
+                    ? (layerBlur ? `${baseFilter} blur(${layerBlur}px)` : baseFilter)
+                    : (layerBlur ? `blur(${layerBlur}px)` : 'none');
+                ctx.filter = layerFilter;
                 ctx.globalAlpha = effects.opacity ?? 1;
                 ctx.globalCompositeOperation = effects.blendMode || 'source-over';
                 if (effects.shadow && effects.shadow.enabled) {
@@ -750,11 +754,33 @@
         tCtx.translate(tempCanvas.width / 2, tempCanvas.height / 2);
         tCtx.rotate(rotation * Math.PI / 180);
         tCtx.scale(flipH, flipV);
-        tCtx.filter = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) blur(${filters.blur}px) hue-rotate(${filters.hue}deg)`;
+
+        const baseFilter = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) blur(${filters.blur}px) hue-rotate(${filters.hue}deg)`;
+
         if (layers.length) {
             layers.forEach(layer => {
                 if (!layer.visible) return;
                 tCtx.save();
+                const effects = ensureLayerEffects(layer);
+                const layerBlur = effects.blur || 0;
+                const isActive = layer.id === activeLayerId;
+                const layerFilter = isActive
+                    ? (layerBlur ? `${baseFilter} blur(${layerBlur}px)` : baseFilter)
+                    : (layerBlur ? `blur(${layerBlur}px)` : 'none');
+                tCtx.filter = layerFilter;
+                tCtx.globalAlpha = effects.opacity ?? 1;
+                tCtx.globalCompositeOperation = effects.blendMode || 'source-over';
+                if (effects.shadow && effects.shadow.enabled) {
+                    tCtx.shadowColor = effects.shadow.color || hexToRgba(effects.shadow.hex, effects.shadow.opacity);
+                    tCtx.shadowOffsetX = effects.shadow.x;
+                    tCtx.shadowOffsetY = effects.shadow.y;
+                    tCtx.shadowBlur = effects.shadow.blur;
+                } else {
+                    tCtx.shadowColor = 'transparent';
+                    tCtx.shadowOffsetX = 0;
+                    tCtx.shadowOffsetY = 0;
+                    tCtx.shadowBlur = 0;
+                }
                 tCtx.translate(layer.x, layer.y);
                 tCtx.rotate(layer.rotation);
                 const drawW = layer.w * layer.scale;
@@ -820,15 +846,35 @@
         tempCanvas.height = canvas.height;
         const tCtx = tempCanvas.getContext('2d');
 
-        // Replicate render logic
+        // Replicate render logic (per-layer filters)
         tCtx.translate(tempCanvas.width / 2, tempCanvas.height / 2);
         tCtx.rotate(rotation * Math.PI / 180);
         tCtx.scale(flipH, flipV);
-        tCtx.filter = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) blur(${filters.blur}px) hue-rotate(${filters.hue}deg)`;
+        const baseFilter = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) blur(${filters.blur}px) hue-rotate(${filters.hue}deg)`;
         if (layers.length) {
             layers.forEach(layer => {
                 if (!layer.visible) return;
                 tCtx.save();
+                const effects = ensureLayerEffects(layer);
+                const layerBlur = effects.blur || 0;
+                const isActive = layer.id === activeLayerId;
+                const layerFilter = isActive
+                    ? (layerBlur ? `${baseFilter} blur(${layerBlur}px)` : baseFilter)
+                    : (layerBlur ? `blur(${layerBlur}px)` : 'none');
+                tCtx.filter = layerFilter;
+                tCtx.globalAlpha = effects.opacity ?? 1;
+                tCtx.globalCompositeOperation = effects.blendMode || 'source-over';
+                if (effects.shadow && effects.shadow.enabled) {
+                    tCtx.shadowColor = effects.shadow.color || hexToRgba(effects.shadow.hex, effects.shadow.opacity);
+                    tCtx.shadowOffsetX = effects.shadow.x;
+                    tCtx.shadowOffsetY = effects.shadow.y;
+                    tCtx.shadowBlur = effects.shadow.blur;
+                } else {
+                    tCtx.shadowColor = 'transparent';
+                    tCtx.shadowOffsetX = 0;
+                    tCtx.shadowOffsetY = 0;
+                    tCtx.shadowBlur = 0;
+                }
                 tCtx.translate(layer.x, layer.y);
                 tCtx.rotate(layer.rotation);
                 const drawW = layer.w * layer.scale;
