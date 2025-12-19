@@ -209,6 +209,48 @@
         .btn-tool.active { background: var(--accent); }
         .btn-tool.danger { background: #d42e2e; }
 
+        .layer-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .layer-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 8px;
+            background: #2c2c2f;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: 0.15s ease;
+        }
+
+        .layer-item:hover { background: #343438; }
+        .layer-item.active { border-color: var(--accent); background: #2f3b45; }
+
+        .layer-item span { pointer-events: none; }
+
+        .layer-actions {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .layer-scale-row {
+            margin-top: 10px;
+        }
+
+        .layer-scale-row label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+
         /* --- Modals --- */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -309,6 +351,21 @@
             <div class="btn-grid">
                 <button class="btn-tool" id="btnCrop">✂ Crop Mode</button>
                 <button class="btn-tool" id="resetAllBtn">⟲ Reset All</button>
+            </div>
+        </div>
+
+        <div class="tool-group">
+            <h3>Layers</h3>
+            <div id="layersList" class="layer-list"></div>
+            <div class="layer-actions">
+                <button class="btn-tool" id="layerUpBtn">⬆</button>
+                <button class="btn-tool" id="layerDownBtn">⬇</button>
+                <button class="btn-tool danger" id="layerDeleteBtn">🗑</button>
+            </div>
+            <div class="layer-scale-row">
+                <label>Scale <span id="layerScaleLabel">100%</span></label>
+                <input type="range" id="layerScale" min="10" max="300" value="100">
+                <button class="btn-tool btn-full" id="layerFitBtn">Fit to Canvas</button>
             </div>
         </div>
 

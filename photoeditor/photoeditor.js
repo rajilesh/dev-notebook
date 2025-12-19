@@ -26,6 +26,13 @@
     const applyCropBtn = document.getElementById('applyCropBtn');
     const imageInfo = document.getElementById('imageInfo');
     const cropSizeBadge = document.getElementById('cropSizeBadge');
+    const layersList = document.getElementById('layersList');
+    const layerUpBtn = document.getElementById('layerUpBtn');
+    const layerDownBtn = document.getElementById('layerDownBtn');
+    const layerDeleteBtn = document.getElementById('layerDeleteBtn');
+    const layerScaleInput = document.getElementById('layerScale');
+    const layerScaleLabel = document.getElementById('layerScaleLabel');
+    const layerFitBtn = document.getElementById('layerFitBtn');
 
     // State Variables
     let img = new Image(); // The source image (always unmodified pixels)
@@ -36,6 +43,11 @@
     let customCanvasActive = true; // when true, keep canvas size on incoming images
     let useCanvasFit = true; // when true, scale image to cover canvas
     const fitMode = 'cover';
+
+    // Layer model
+    let layers = [];
+    let activeLayerId = null;
+    let layerDrag = { dragging: false, id: null, startX: 0, startY: 0 };
 
     // Filter Defaults
     const defaultFilters = {
@@ -75,6 +87,47 @@
             return `Image ${sourceWidth}x${sourceHeight} -> canvas ${canvas.width}x${canvas.height} (cover ${scale.toFixed(2)}x, draw ${Math.round(drawW)}x${Math.round(drawH)})`;
         }
         return `Image ${sourceWidth}x${sourceHeight} (canvas resized to image)`;
+    }
+
+    function createLayerFromImage(image, name = 'Layer') {
+        const baseScale = Math.max(canvas.width / image.width, canvas.height / image.height) || 1;
+        const layer = {
+            id: crypto.randomUUID(),
+            name: `${name} (${image.width}x${image.height})`,
+            img: image,
+            w: image.width,
+            h: image.height,
+            x: 0,
+            y: 0,
+            scale: baseScale,
+            rotation: 0,
+            visible: true
+        };
+        return layer;
+    }
+
+    function setActiveLayer(id) {
+        activeLayerId = id;
+        updateLayerUI();
+    }
+
+    function updateLayerUI() {
+        if (!layersList) return;
+        layersList.innerHTML = '';
+        layers.forEach(layer => {
+            const div = document.createElement('div');
+            div.className = 'layer-item' + (layer.id === activeLayerId ? ' active' : '');
+            div.dataset.id = layer.id;
+            div.innerHTML = `<span>${layer.name}</span><span>${Math.round(layer.scale * 100)}%</span>`;
+            div.addEventListener('click', () => setActiveLayer(layer.id));
+            layersList.appendChild(div);
+        });
+
+        const active = layers.find(l => l.id === activeLayerId);
+        if (active && layerScaleInput && layerScaleLabel) {
+            layerScaleInput.value = Math.round(active.scale * 100);
+            layerScaleLabel.textContent = `${Math.round(active.scale * 100)}%`;
+        }
     }
 
     function updateCropBadge() {
@@ -138,6 +191,20 @@
 
     fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
+    // Layer UI bindings
+    layerUpBtn.addEventListener('click', () => moveLayer(1));
+    layerDownBtn.addEventListener('click', () => moveLayer(-1));
+    layerDeleteBtn.addEventListener('click', deleteActiveLayer);
+    layerFitBtn.addEventListener('click', fitActiveLayer);
+    layerScaleInput.addEventListener('input', () => {
+        const active = layers.find(l => l.id === activeLayerId);
+        if (!active) return;
+        active.scale = layerScaleInput.value / 100;
+        layerScaleLabel.textContent = `${layerScaleInput.value}%`;
+        render();
+        updateLayerUI();
+    });
+
     function handleFiles(files) {
         const file = files[0];
         if (!file.type.startsWith('image/')) return;
@@ -146,23 +213,23 @@
         reader.onload = (e) => {
             const incoming = new Image();
             incoming.onload = () => {
-                img = incoming;
-                resetAllState();
-                isImageLoaded = true;
-
                 const shouldFitToCanvas = customCanvasActive && canvas.width && canvas.height;
-                useCanvasFit = shouldFitToCanvas;
 
-                if (!shouldFitToCanvas) {
-                    canvas.width = img.width;
-                    canvas.height = img.height;
+                if (!shouldFitToCanvas && layers.length === 0) {
+                    canvas.width = incoming.width;
+                    canvas.height = incoming.height;
                     useCanvasFit = false;
                 }
 
-                setImageInfoText(describeFit(img.width, img.height));
+                const layer = createLayerFromImage(incoming, 'Layer');
+                layers.push(layer);
+                setActiveLayer(layer.id);
+                isImageLoaded = true;
+                setImageInfoText(describeFit(incoming.width, incoming.height));
+                updateLayerUI();
                 render();
 
-                // After placing an image, require explicit "New Canvas" to keep fitting
+                // After placing the first image, leave canvas sizing to user unless they create a new canvas
                 customCanvasActive = false;
             };
             incoming.src = e.target.result;
@@ -199,16 +266,22 @@
         `;
         ctx.filter = filterString;
 
-        // 4. Draw Image (centered)
-        // If image is loaded, draw it. If not, we are in "Color Canvas" mode, just fill rect.
-        if (isImageLoaded) {
-            const { drawW, drawH } = getDrawDimensions();
-            ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+        // 4. Draw Layers (centered)
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        if (layers.length) {
+            layers.forEach(layer => {
+                if (!layer.visible) return;
+                ctx.save();
+                ctx.translate(layer.x, layer.y);
+                ctx.rotate(layer.rotation);
+                const drawW = layer.w * layer.scale;
+                const drawH = layer.h * layer.scale;
+                ctx.drawImage(layer.img, -drawW / 2, -drawH / 2, drawW, drawH);
+                ctx.restore();
+            });
         } else {
-            // If it's a blank canvas project, the "img" object might be a 1x1 color pixel or we just draw background
-            // For simplicity, if isImageLoaded is false, we rely on the background fill created during 'createBlankCanvas'
-            // But if we rotate a blank canvas, we need to redraw the rect.
-            ctx.fillStyle = img.src || '#ffffff'; // Fallback
+            // Fallback to blank canvas render
+            ctx.fillStyle = img.src || '#ffffff';
             ctx.fillRect(-canvas.width/2, -canvas.height/2, canvas.width, canvas.height);
         }
 
@@ -282,6 +355,7 @@
         flipH = 1;
         flipV = 1;
         resetAdjustments();
+        layers.forEach(layer => { if (!layer.isBackground) { layer.x = 0; layer.y = 0; layer.rotation = 0; } });
     }
 
     function resetAll() {
@@ -304,7 +378,6 @@
     function createBlankCanvas(w, h, color) {
         canvas.width = w;
         canvas.height = h;
-        // Create a dummy image that is just a solid color
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = w;
         tempCanvas.height = h;
@@ -312,16 +385,31 @@
         tCtx.fillStyle = color;
         tCtx.fillRect(0,0,w,h);
         
-        img = new Image();
-        img.onload = () => {
+        const bgImg = new Image();
+        bgImg.onload = () => {
+            layers = [{
+                id: crypto.randomUUID(),
+                name: 'Background',
+                img: bgImg,
+                w,
+                h,
+                x: 0,
+                y: 0,
+                scale: 1,
+                rotation: 0,
+                visible: true,
+                isBackground: true
+            }];
+            activeLayerId = layers[0].id;
             isImageLoaded = true;
             resetAllState();
             customCanvasActive = true;
             useCanvasFit = true;
             setImageInfoText(`Canvas ${w}x${h} (blank)`);
+            updateLayerUI();
             render();
         };
-        img.src = tempCanvas.toDataURL();
+        bgImg.src = tempCanvas.toDataURL();
     }
 
     // --- CROP FUNCTIONALITY ---
@@ -411,6 +499,51 @@
 
     window.addEventListener('mouseup', () => { isDragging = false; currentHandle = null; });
 
+    // --- Layer Dragging ---
+    canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left - canvas.width / 2;
+        const y = e.clientY - rect.top - canvas.height / 2;
+
+        // pick topmost layer under pointer
+        for (let i = layers.length - 1; i >= 0; i--) {
+            const layer = layers[i];
+            const drawW = layer.w * layer.scale;
+            const drawH = layer.h * layer.scale;
+            const left = layer.x - drawW / 2;
+            const right = layer.x + drawW / 2;
+            const top = layer.y - drawH / 2;
+            const bottom = layer.y + drawH / 2;
+            if (x >= left && x <= right && y >= top && y <= bottom) {
+                setActiveLayer(layer.id);
+                layerDrag = { dragging: true, id: layer.id, startX: x, startY: y };
+                break;
+            }
+        }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!layerDrag.dragging) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left - canvas.width / 2;
+        const y = e.clientY - rect.top - canvas.height / 2;
+        const dx = x - layerDrag.startX;
+        const dy = y - layerDrag.startY;
+        const layer = layers.find(l => l.id === layerDrag.id);
+        if (layer) {
+            layer.x += dx;
+            layer.y += dy;
+            layerDrag.startX = x;
+            layerDrag.startY = y;
+            render();
+        }
+    });
+
+    window.addEventListener('mouseup', () => {
+        layerDrag.dragging = false;
+        layerDrag.id = null;
+    });
+
     function applyCrop() {
         // 1. Create a temporary canvas to flatten the current look
         const tempCanvas = document.createElement('canvas');
@@ -424,8 +557,18 @@
         tCtx.rotate(rotation * Math.PI / 180);
         tCtx.scale(flipH, flipV);
         tCtx.filter = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) blur(${filters.blur}px) hue-rotate(${filters.hue}deg)`;
-        const { drawW, drawH } = getDrawDimensions();
-        tCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+        if (layers.length) {
+            layers.forEach(layer => {
+                if (!layer.visible) return;
+                tCtx.save();
+                tCtx.translate(layer.x, layer.y);
+                tCtx.rotate(layer.rotation);
+                const drawW = layer.w * layer.scale;
+                const drawH = layer.h * layer.scale;
+                tCtx.drawImage(layer.img, -drawW / 2, -drawH / 2, drawW, drawH);
+                tCtx.restore();
+            });
+        }
         tCtx.restore();
 
         // 2. Calculate crop coordinates relative to the Canvas element
@@ -453,11 +596,13 @@
         finalCanvas.height = ch;
         finalCanvas.getContext('2d').putImageData(croppedData, 0, 0);
 
-        img.src = finalCanvas.toDataURL();
-        img.onload = () => {
+        const flattened = new Image();
+        flattened.onload = () => {
             // 5. Reset UI
             canvas.width = cw;
             canvas.height = ch;
+            layers = [createLayerFromImage(flattened, 'Cropped')];
+            activeLayerId = layers[0].id;
             isImageLoaded = true;
             customCanvasActive = false;
             useCanvasFit = false;
@@ -466,8 +611,10 @@
             resetAllState();
             cancelCrop();
             setImageInfoText(`Cropped to ${cw}x${ch}`);
+            updateLayerUI();
             render();
-        }
+        };
+        flattened.src = finalCanvas.toDataURL();
     }
 
     // --- Download ---
@@ -483,11 +630,54 @@
         tCtx.rotate(rotation * Math.PI / 180);
         tCtx.scale(flipH, flipV);
         tCtx.filter = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) blur(${filters.blur}px) hue-rotate(${filters.hue}deg)`;
-        const { drawW, drawH } = getDrawDimensions();
-        tCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+        if (layers.length) {
+            layers.forEach(layer => {
+                if (!layer.visible) return;
+                tCtx.save();
+                tCtx.translate(layer.x, layer.y);
+                tCtx.rotate(layer.rotation);
+                const drawW = layer.w * layer.scale;
+                const drawH = layer.h * layer.scale;
+                tCtx.drawImage(layer.img, -drawW / 2, -drawH / 2, drawW, drawH);
+                tCtx.restore();
+            });
+        }
 
         const link = document.createElement('a');
         link.download = 'edited-image.jpg';
         link.href = tempCanvas.toDataURL('image/jpeg', 0.9);
         link.click();
+    }
+
+    // --- Layer helpers ---
+    function moveLayer(direction) {
+        const idx = layers.findIndex(l => l.id === activeLayerId);
+        if (idx === -1) return;
+        const target = idx + direction;
+        if (target < 0 || target >= layers.length) return;
+        const [layer] = layers.splice(idx, 1);
+        layers.splice(target, 0, layer);
+        updateLayerUI();
+        render();
+    }
+
+    function deleteActiveLayer() {
+        if (layers.length <= 1) return; // keep at least background
+        const idx = layers.findIndex(l => l.id === activeLayerId);
+        if (idx === -1) return;
+        layers.splice(idx, 1);
+        activeLayerId = layers[layers.length - 1].id;
+        updateLayerUI();
+        render();
+    }
+
+    function fitActiveLayer() {
+        const layer = layers.find(l => l.id === activeLayerId);
+        if (!layer) return;
+        const scale = Math.max(canvas.width / layer.w, canvas.height / layer.h) || 1;
+        layer.scale = scale;
+        layer.x = 0;
+        layer.y = 0;
+        updateLayerUI();
+        render();
     }
