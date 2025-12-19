@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -94,6 +93,9 @@
                 <div class="actions">
                     <div id="notification" class="notification"></div>
                     <span id="save-status" class="status">Saved</span>
+                    <button id="open-draw-btn" class="icon-btn" title="Open Whiteboard">
+                        <span class="material-icons">gesture</span>
+                    </button>
                     <button id="share-btn" class="icon-btn" title="Share Current Note">
                         <span class="material-icons">share</span>
                     </button>
@@ -636,10 +638,15 @@
         </div>
     </div>
 
+    <iframe src="draw/index.html" id="excalidraw" class=" excalidraw"></iframe>
+
+    <button id="back-to-notes-btn" class="floating-nav-btn" title="Back to Notebook">< Notes</button>
+
     <script src="js/highlight.min.js"></script>
     <script src="js/quill.min.js"></script>
     <script src="js/ai-providers.js"></script>
     <script src="script.js"></script>
+
 </body>
 
 </html>

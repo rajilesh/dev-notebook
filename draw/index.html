@@ -80,9 +80,9 @@
     <!------------------------------------------------------------------------->
     
 
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/draw/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/draw/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/draw/favicon-16x16.png" />
 
     <!-- Excalidraw version -->
     <meta name="version" content="2024-03-11T11:08:43Z-f12985a0" />
@@ -153,9 +153,9 @@
         }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-WEGKQoYx.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-L1Z86Reg.css">
-  <link rel="manifest" href="/manifest.webmanifest"></head>
+    <script type="module" crossorigin src="/draw/assets/index-WEGKQoYx.js"></script>
+    <link rel="stylesheet" crossorigin href="/draw/assets/index-L1Z86Reg.css">
+  <link rel="manifest" href="/draw/manifest.webmanifest"></head>
 
   <body>
     <noscript> You need to enable JavaScript to run this app. </noscript>
@@ -164,6 +164,17 @@
     </header>
     <div id="root"></div>
     
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const backBtn = document.getElementById('back-to-notes-btn');
+        if (backBtn) {
+          backBtn.addEventListener('click', () => {
+            window.location.href = '../newtab.html';
+          });
+        }
+      });
+    </script>
+
     <!-- 100% privacy friendly analytics -->
     <script>
       // need to load this script dynamically bcs. of iframe embed tracking

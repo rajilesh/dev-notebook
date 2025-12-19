@@ -1,6 +1,7 @@
 // --- DOM Elements ---
 const appContainer = document.querySelector('.app-container');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+const excalidraw = document.getElementById('excalidraw');
 
 // Note Elements
 // Legacy notesListEl removed
@@ -11,6 +12,8 @@ const searchInput = document.getElementById('search-input');
 // Legacy addBtn removed
 const deleteBtn = document.getElementById('delete-note-btn');
 const statusEl = document.getElementById('save-status');
+const openDrawBtn = document.getElementById('open-draw-btn');
+const backToNotesBtn = document.getElementById('back-to-notes-btn');
 const shareBtn = document.getElementById('share-btn');
 const exportSingleBtn = document.getElementById('export-single-btn');
 const exportAllBtn = document.getElementById('export-all-btn');
@@ -1985,6 +1988,17 @@ window.addEventListener('click', (e) => {
 
 // Share/Export/Import
 // Share/Export/Import
+openDrawBtn.addEventListener('click', () => {
+    excalidraw.classList.add('active');
+    backToNotesBtn.classList.add('active');
+    fabAddBtn.classList.add('hide');
+});
+backToNotesBtn.addEventListener('click', () => {
+    excalidraw.classList.remove('active');
+    backToNotesBtn.classList.remove('active');
+    fabAddBtn.classList.remove('hide');
+});
+
 shareBtn.addEventListener('click', shareCurrentItem);
 exportSingleBtn.addEventListener('click', exportSingleItem);
 exportAllBtn.addEventListener('click', exportAllWorkspaces);

@@ -1138,6 +1138,9 @@ body {
     transition: transform 0.2s, background-color 0.2s, box-shadow 0.2s;
     z-index: 100;
 }
+.fab-btn.hide{
+     display:none;
+}
 
 .fab-btn:hover {
     transform: scale(1.1);
@@ -2922,3 +2925,35 @@ body.light-mode .media-provider-info {
     background-color: var(--item-active);
     border-left: 3px solid var(--accent);
 }
+.excalidraw{
+    width: 100%; height: 100%; display: none;
+     border:0 none;
+}
+.excalidraw.active{
+    display:block;
+    position: absolute;
+    inset: 0;
+}
+
+      .floating-nav-btn {
+        position: fixed;
+        top: 72px;
+        right: 12px;
+        z-index: 2147483647;
+        background: #121212;
+        color: #fff;
+        border: 1px solid #2f2f2f;
+        border-radius: 999px;
+        padding: 10px 14px;
+        font-size: 13px;
+        cursor: pointer;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        display:none;
+      }
+      .floating-nav-btn.active{
+     display: block;
+      }
+
+      .floating-nav-btn:hover {
+        background: #1e1e1e;
+      }
