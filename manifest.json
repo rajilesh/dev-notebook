@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dev Notebook",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A distraction-free notebook replacing the new tab page.",
   "chrome_url_overrides": {
     "newtab": "newtab.html"
