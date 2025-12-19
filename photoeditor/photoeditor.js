@@ -2,6 +2,12 @@
     // --- State Management ---
     const canvas = document.getElementById('editorCanvas');
     const ctx = canvas.getContext('2d');
+    const fabricOverlay = document.getElementById('fabricOverlay');
+    const toolRail = document.getElementById('toolRail');
+    const toolButtons = Array.from(document.querySelectorAll('.tool-rail-btn'));
+    const toolColorInput = document.getElementById('toolColor');
+    const toolSizeInput = document.getElementById('toolSize');
+    const toolStrengthInput = document.getElementById('toolStrength');
     const fileInput = document.getElementById('fileInput');
     const canvasWrapper = document.getElementById('canvasWrapper');
     const dropZone = document.body; // Whole body is drop zone
@@ -10,6 +16,7 @@
     const newCanvasBtn = document.getElementById('newCanvasBtn');
     const openImageBtn = document.getElementById('openImageBtn');
     const exportBtn = document.getElementById('exportBtn');
+    const exportPngBtn = document.getElementById('exportPngBtn');
     const cancelNewCanvasBtn = document.getElementById('cancelNewCanvasBtn');
     const createCanvasBtn = document.getElementById('createCanvasBtn');
     const resetAllBtn = document.getElementById('resetAllBtn');
@@ -60,6 +67,18 @@
     let layers = [];
     let activeLayerId = null;
     let layerDrag = { dragging: false, id: null, startX: 0, startY: 0 };
+    let fabricCanvas = null;
+    const toolState = {
+        active: 'move',
+        color: toolColorInput?.value || '#ffffff',
+        size: parseInt(toolSizeInput?.value || '24', 10),
+        strength: (parseInt(toolStrengthInput?.value || '50', 10) / 100)
+    };
+    let isPanning = false;
+    let lastPan = { x: 0, y: 0 };
+    let paintSession = null;
+    let cloneSource = null;
+    let selectionShape = null;
 
     // Filter Defaults
     const defaultFilters = {
@@ -224,16 +243,534 @@
         cropSizeBadge.textContent = width && height ? `${width}px × ${height}px` : '';
     }
 
+    function getActiveLayer() {
+        return layers.find(l => l.id === activeLayerId);
+    }
+
+    function getCanvasPoint(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: e.clientX - rect.left - canvas.width / 2,
+            y: e.clientY - rect.top - canvas.height / 2
+        };
+    }
+
+    function toLayerCoords(point, layer) {
+        if (!layer) return null;
+        const r = -(layer.rotation || 0);
+        const cos = Math.cos(r);
+        const sin = Math.sin(r);
+        const dx = point.x - layer.x;
+        const dy = point.y - layer.y;
+        const rx = dx * cos - dy * sin;
+        const ry = dx * sin + dy * cos;
+        const lx = (rx / (layer.scale || 1)) + layer.w / 2;
+        const ly = (ry / (layer.scale || 1)) + layer.h / 2;
+        return { x: lx, y: ly };
+    }
+
+    function createLayerSurface(layer) {
+        const surface = document.createElement('canvas');
+        surface.width = layer.w;
+        surface.height = layer.h;
+        const sctx = surface.getContext('2d');
+        sctx.drawImage(layer.img, 0, 0, layer.w, layer.h);
+        return { surface, sctx };
+    }
+
+    function commitSurfaceToLayer(layer, surface) {
+        return new Promise((resolve) => {
+            const imgEl = new Image();
+            imgEl.onload = () => {
+                layer.img = imgEl;
+                render();
+                resolve();
+            };
+            imgEl.src = surface.toDataURL();
+        });
+    }
+
+    function startPaintSession(opt, pt) {
+        const layer = getActiveLayer();
+        if (!layer) return;
+        const local = toLayerCoords(pt, layer);
+        if (!local || local.x < 0 || local.y < 0 || local.x >= layer.w || local.y >= layer.h) return;
+        paintSession = {
+            tool: toolState.active,
+            layer,
+            surface: createLayerSurface(layer),
+            last: local,
+            src: cloneSource
+        };
+
+        // For clone stamp: Alt/Option to set source
+        if (toolState.active === 'clone' && opt.e.altKey) {
+            cloneSource = local;
+            paintSession = null;
+            return;
+        }
+
+        applyPaintStroke(local, paintSession);
+    }
+
+    function continuePaintSession(pt, opt) {
+        if (!paintSession) return;
+        const local = toLayerCoords(pt, paintSession.layer);
+        if (!local) return;
+        applyPaintStroke(local, paintSession);
+        paintSession.last = local;
+    }
+
+    function endPaintSession() {
+        if (!paintSession) return;
+        commitSurfaceToLayer(paintSession.layer, paintSession.surface.surface);
+        paintSession = null;
+    }
+
+    function applyPaintStroke(local, session) {
+        const { sctx } = session.surface;
+        const radius = toolState.size / 2;
+        const strength = toolState.strength;
+        sctx.save();
+        if (session.tool === 'eraser') {
+            sctx.globalCompositeOperation = 'destination-out';
+            sctx.beginPath();
+            sctx.lineWidth = toolState.size;
+            sctx.lineCap = 'round';
+            sctx.moveTo(session.last.x, session.last.y);
+            sctx.lineTo(local.x, local.y);
+            sctx.stroke();
+        } else if (session.tool === 'brush' || session.tool === 'pen') {
+            sctx.globalAlpha = strength;
+            sctx.strokeStyle = toolState.color;
+            sctx.lineWidth = toolState.size;
+            sctx.lineCap = 'round';
+            sctx.beginPath();
+            sctx.moveTo(session.last.x, session.last.y);
+            sctx.lineTo(local.x, local.y);
+            sctx.stroke();
+        } else if (session.tool === 'spotheal') {
+            sctx.globalAlpha = 0.8;
+            sctx.filter = 'blur(6px)';
+            sctx.drawImage(session.surface.surface,
+                session.last.x - radius, session.last.y - radius, radius * 2, radius * 2,
+                session.last.x - radius, session.last.y - radius, radius * 2, radius * 2);
+        } else if (session.tool === 'smudge') {
+            sctx.globalAlpha = 0.8;
+            sctx.filter = 'blur(3px)';
+            sctx.drawImage(session.surface.surface,
+                session.last.x - radius, session.last.y - radius, radius * 2, radius * 2,
+                local.x - radius, local.y - radius, radius * 2, radius * 2);
+        } else if (session.tool === 'clone' && cloneSource) {
+            const dx = local.x - session.last.x;
+            const dy = local.y - session.last.y;
+            cloneSource = { x: cloneSource.x + dx, y: cloneSource.y + dy };
+            sctx.drawImage(session.layer.img,
+                cloneSource.x - radius, cloneSource.y - radius, radius * 2, radius * 2,
+                local.x - radius, local.y - radius, radius * 2, radius * 2);
+        }
+        sctx.restore();
+    }
+
+    function handleRasterClickTool(opt, pt) {
+        const layer = getActiveLayer();
+        if (!layer) return;
+        const local = toLayerCoords(pt, layer);
+        if (!local || local.x < 0 || local.y < 0 || local.x >= layer.w || local.y >= layer.h) return;
+        switch (toolState.active) {
+            case 'bucket':
+                floodFillLayer(layer, local, toolState.color);
+                break;
+            case 'gradient':
+                applyGradientFill(layer, local, toolState.color);
+                break;
+            case 'clone':
+                if (opt.e.altKey) {
+                    cloneSource = local;
+                }
+                break;
+            case 'dodge':
+            case 'burn':
+            case 'sponge':
+                applyToneTool(layer, local, toolState.active);
+                break;
+            case 'blur':
+            case 'sharpen':
+                applyBlurSharpen(layer, local, toolState.active);
+                break;
+            case 'smudge':
+                startPaintSession(opt, pt);
+                break;
+        }
+    }
+
+    function floodFillLayer(layer, local, fillColor) {
+        const { surface, sctx } = createLayerSurface(layer);
+        const data = sctx.getImageData(0, 0, layer.w, layer.h);
+        const targetOffset = ((Math.floor(local.y) * layer.w) + Math.floor(local.x)) * 4;
+        const target = data.data.slice(targetOffset, targetOffset + 4);
+        const tolerance = 30;
+        const color = hexToRgb(fillColor);
+        const stack = [{ x: Math.floor(local.x), y: Math.floor(local.y) }];
+        const visited = new Uint8Array(layer.w * layer.h);
+
+        while (stack.length) {
+            const { x, y } = stack.pop();
+            if (x < 0 || y < 0 || x >= layer.w || y >= layer.h) continue;
+            const idx = (y * layer.w + x);
+            if (visited[idx]) continue;
+            visited[idx] = 1;
+            const di = idx * 4;
+            if (colorWithinTolerance(data.data, di, target, tolerance)) {
+                data.data[di] = color.r;
+                data.data[di + 1] = color.g;
+                data.data[di + 2] = color.b;
+                data.data[di + 3] = 255;
+                stack.push({ x: x + 1, y });
+                stack.push({ x: x - 1, y });
+                stack.push({ x, y: y + 1 });
+                stack.push({ x, y: y - 1 });
+            }
+        }
+
+        sctx.putImageData(data, 0, 0);
+        commitSurfaceToLayer(layer, surface);
+    }
+
+    function colorWithinTolerance(arr, idx, target, tol) {
+        return Math.abs(arr[idx] - target[0]) <= tol &&
+               Math.abs(arr[idx + 1] - target[1]) <= tol &&
+               Math.abs(arr[idx + 2] - target[2]) <= tol;
+    }
+
+    function hexToRgb(hex) {
+        const sanitized = hex.replace('#', '');
+        const bigint = parseInt(sanitized, 16);
+        return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
+    }
+
+    function applyGradientFill(layer, local, color) {
+        const { surface, sctx } = createLayerSurface(layer);
+        const grad = sctx.createLinearGradient(0, 0, local.x, local.y);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, 'transparent');
+        sctx.globalAlpha = toolState.strength;
+        sctx.fillStyle = grad;
+        sctx.fillRect(0, 0, layer.w, layer.h);
+        commitSurfaceToLayer(layer, surface);
+    }
+
+    function applyToneTool(layer, local, mode) {
+        const { surface, sctx } = createLayerSurface(layer);
+        const radius = toolState.size / 2;
+        const sx = Math.max(0, local.x - radius);
+        const sy = Math.max(0, local.y - radius);
+        const sw = Math.min(layer.w - sx, radius * 2);
+        const sh = Math.min(layer.h - sy, radius * 2);
+        const imgData = sctx.getImageData(sx, sy, sw, sh);
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            const r = imgData.data[i];
+            const g = imgData.data[i + 1];
+            const b = imgData.data[i + 2];
+            if (mode === 'dodge') {
+                imgData.data[i] = Math.min(255, r + 20);
+                imgData.data[i + 1] = Math.min(255, g + 20);
+                imgData.data[i + 2] = Math.min(255, b + 20);
+            } else if (mode === 'burn') {
+                imgData.data[i] = Math.max(0, r - 20);
+                imgData.data[i + 1] = Math.max(0, g - 20);
+                imgData.data[i + 2] = Math.max(0, b - 20);
+            } else if (mode === 'sponge') {
+                const avg = (r + g + b) / 3;
+                imgData.data[i] = r + (avg - r) * 0.3;
+                imgData.data[i + 1] = g + (avg - g) * 0.3;
+                imgData.data[i + 2] = b + (avg - b) * 0.3;
+            }
+            imgData.data[i + 3] = 255;
+        }
+        sctx.putImageData(imgData, sx, sy);
+        commitSurfaceToLayer(layer, surface);
+    }
+
+    function applyBlurSharpen(layer, local, mode) {
+        const { surface, sctx } = createLayerSurface(layer);
+        const radius = toolState.size / 2;
+        sctx.save();
+        if (mode === 'blur') {
+            sctx.filter = 'blur(3px)';
+            sctx.drawImage(surface, local.x - radius, local.y - radius, radius * 2, radius * 2, local.x - radius, local.y - radius, radius * 2, radius * 2);
+        } else {
+            // crude sharpen via unsharp mask-ish overlay
+            sctx.globalCompositeOperation = 'overlay';
+            sctx.drawImage(surface, local.x - radius, local.y - radius, radius * 2, radius * 2, local.x - radius, local.y - radius, radius * 2, radius * 2);
+        }
+        sctx.restore();
+        commitSurfaceToLayer(layer, surface);
+    }
+
+    function createSelectionShape(pt, mode) {
+        if (!fabricCanvas) return;
+        if (selectionShape) fabricCanvas.remove(selectionShape);
+        const size = toolState.size * 4;
+        let shape;
+        if (mode === 'lasso') {
+            shape = new fabric.Polygon([
+                { x: pt.x + canvas.width / 2 - size/2, y: pt.y + canvas.height / 2 - size/2 },
+                { x: pt.x + canvas.width / 2 + size/2, y: pt.y + canvas.height / 2 - size/2 },
+                { x: pt.x + canvas.width / 2 + size/2, y: pt.y + canvas.height / 2 + size/2 },
+                { x: pt.x + canvas.width / 2 - size/2, y: pt.y + canvas.height / 2 + size/2 }
+            ], { fill: 'rgba(0, 127, 212, 0.15)', stroke: '#0af', strokeWidth: 1, selectable: true, evented: true, excludeFromExport: true });
+        } else if (mode === 'quickselect') {
+            shape = new fabric.Circle({ left: pt.x + canvas.width / 2 - size/2, top: pt.y + canvas.height / 2 - size/2, radius: size/2, fill: 'rgba(0, 127, 212, 0.15)', stroke: '#0af', strokeWidth: 1, selectable: true, evented: true, excludeFromExport: true });
+        } else {
+            shape = new fabric.Rect({ left: pt.x + canvas.width / 2 - size/2, top: pt.y + canvas.height / 2 - size/2, width: size, height: size, fill: 'rgba(0, 127, 212, 0.1)', stroke: '#0af', strokeWidth: 1, selectable: true, evented: true, excludeFromExport: true });
+        }
+        selectionShape = shape;
+        fabricCanvas.add(selectionShape);
+        fabricCanvas.setActiveObject(selectionShape);
+        fabricCanvas.requestRenderAll();
+    }
+
+    function addTextAtPoint(pt) {
+        if (!fabricCanvas || typeof fabric === 'undefined') return;
+        const text = new fabric.Textbox('Text', {
+            left: pt.x + canvas.width / 2,
+            top: pt.y + canvas.height / 2,
+            fill: toolState.color,
+            fontSize: Math.max(12, toolState.size),
+            editable: true
+        });
+        fabricCanvas.add(text);
+        fabricCanvas.setActiveObject(text);
+        text.enterEditing();
+        text.on('editing:exited', () => {
+            commitTextToLayer(text);
+            fabricCanvas.remove(text);
+        });
+    }
+
+    function commitTextToLayer(textObj) {
+        const layer = getActiveLayer();
+        if (!layer) return;
+        const { surface, sctx } = createLayerSurface(layer);
+        sctx.save();
+        sctx.fillStyle = textObj.fill || toolState.color;
+        sctx.font = `${textObj.fontSize || 16}px ${textObj.fontFamily || 'sans-serif'}`;
+        sctx.textBaseline = 'top';
+        const local = toLayerCoords({ x: textObj.left - canvas.width / 2, y: textObj.top - canvas.height / 2 }, layer);
+        if (local) {
+            sctx.fillText(textObj.text || '', local.x, local.y, layer.w - local.x);
+        }
+        sctx.restore();
+        commitSurfaceToLayer(layer, surface);
+    }
+
+    // --- Fabric + Tool Rail ---
+    function syncOverlaySize() {
+        if (!canvas || !fabricOverlay) return;
+        fabricOverlay.width = canvas.width;
+        fabricOverlay.height = canvas.height;
+        fabricOverlay.style.width = `${canvas.width}px`;
+        fabricOverlay.style.height = `${canvas.height}px`;
+        if (fabricCanvas) {
+            fabricCanvas.setWidth(canvas.width);
+            fabricCanvas.setHeight(canvas.height);
+            fabricCanvas.calcOffset();
+            fabricCanvas.requestRenderAll();
+        }
+    }
+
+    function initFabricCanvas() {
+        if (fabricCanvas || typeof fabric === 'undefined') return;
+        syncOverlaySize();
+        fabricCanvas = new fabric.Canvas('fabricOverlay', {
+            selection: true,
+            preserveObjectStacking: true
+        });
+        fabricCanvas.renderOnAddRemove = true;
+        if (!fabricCanvas.freeDrawingBrush) {
+            fabricCanvas.freeDrawingBrush = new fabric.PencilBrush(fabricCanvas);
+        }
+        bindFabricEvents();
+        configureFabricForTool();
+    }
+
+    function bindFabricEvents() {
+        if (!fabricCanvas) return;
+        fabricCanvas.on('mouse:down', (opt) => {
+            const pt = getCanvasPoint(opt.e);
+            if (toolState.active === 'hand') {
+                isPanning = true;
+                lastPan = { x: opt.e.clientX, y: opt.e.clientY };
+                fabricCanvas.setCursor('grabbing');
+            }
+            if (toolState.active === 'eyedropper') {
+                const rect = canvas.getBoundingClientRect();
+                const x = Math.round(opt.e.clientX - rect.left);
+                const y = Math.round(opt.e.clientY - rect.top);
+                const pixel = ctx.getImageData(x, y, 1, 1).data;
+                const hex = `#${[pixel[0], pixel[1], pixel[2]].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+                if (toolColorInput) toolColorInput.value = hex;
+                toolState.color = hex;
+                configureFabricForTool();
+            }
+
+            if (['bucket','gradient','clone','dodge','burn','sponge','blur','sharpen','smudge'].includes(toolState.active)) {
+                handleRasterClickTool(opt, pt);
+                return;
+            }
+
+            if (['brush','eraser','spotheal','pen','smudge'].includes(toolState.active)) {
+                startPaintSession(opt, pt);
+                return;
+            }
+
+            if (['lasso','quickselect','magicwand'].includes(toolState.active)) {
+                createSelectionShape(pt, toolState.active);
+                return;
+            }
+
+            if (toolState.active === 'type') {
+                addTextAtPoint(pt);
+                return;
+            }
+        });
+
+        fabricCanvas.on('mouse:up', () => {
+            isPanning = false;
+            fabricCanvas.setCursor('default');
+        });
+
+        fabricCanvas.on('mouse:move', (opt) => {
+            if (!isPanning) return;
+            const e = opt.e;
+            const vpt = fabricCanvas.viewportTransform;
+            vpt[4] += e.clientX - lastPan.x;
+            vpt[5] += e.clientY - lastPan.y;
+            fabricCanvas.requestRenderAll();
+            lastPan = { x: e.clientX, y: e.clientY };
+        });
+
+        fabricCanvas.on('mouse:wheel', (opt) => {
+            if (toolState.active !== 'zoom') return;
+            let zoom = fabricCanvas.getZoom();
+            zoom *= 0.999 ** opt.e.deltaY;
+            zoom = Math.min(Math.max(zoom, 0.1), 8);
+            fabricCanvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+            opt.e.preventDefault();
+            opt.e.stopPropagation();
+        });
+
+        fabricCanvas.on('mouse:move', (opt) => {
+            if (!paintSession) return;
+            const pt = getCanvasPoint(opt.e);
+            continuePaintSession(pt, opt);
+        });
+
+        fabricCanvas.on('mouse:up', (opt) => {
+            if (paintSession) {
+                endPaintSession();
+            }
+        });
+    }
+
+    function bindToolRail() {
+        if (!toolRail || !toolButtons.length) return;
+        toolButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tool = btn.dataset.tool;
+                setActiveTool(tool);
+            });
+        });
+        if (toolColorInput) {
+            toolColorInput.addEventListener('input', (e) => {
+                toolState.color = e.target.value;
+                configureFabricForTool();
+            });
+        }
+        if (toolSizeInput) {
+            toolSizeInput.addEventListener('input', (e) => {
+                toolState.size = parseInt(e.target.value, 10) || 1;
+                configureFabricForTool();
+            });
+        }
+        if (toolStrengthInput) {
+            toolStrengthInput.addEventListener('input', (e) => {
+                toolState.strength = (parseInt(e.target.value, 10) || 0) / 100;
+                configureFabricForTool();
+            });
+        }
+        updateToolButtonStates();
+    }
+
+    function setActiveTool(tool) {
+        toolState.active = tool;
+        updateToolButtonStates();
+        if (tool === 'crop') {
+            initCrop();
+        } else if (tool !== 'crop' && isCropping) {
+            cancelCrop();
+        }
+        configureFabricForTool();
+    }
+
+    function updateToolButtonStates() {
+        toolButtons.forEach(btn => {
+            if (btn.dataset.tool === toolState.active) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    function configureFabricForTool() {
+        if (!fabricCanvas) return;
+        const upper = fabricCanvas.upperCanvasEl;
+        const fabricTools = ['move','lasso','quickselect','magicwand','eyedropper','spotheal','brush','clone','eraser','bucket','gradient','blur','sharpen','smudge','dodge','burn','sponge','pen','pathSelect','directSelect','type','hand','zoom'];
+        const enabled = fabricTools.includes(toolState.active);
+        if (upper) upper.style.pointerEvents = enabled ? 'auto' : 'none';
+
+        fabricCanvas.isDrawingMode = false;
+        fabricCanvas.selection = ['move','pathSelect','directSelect'].includes(toolState.active);
+        fabricCanvas.skipTargetFind = toolState.active === 'hand' || toolState.active === 'zoom';
+        fabricCanvas.defaultCursor = toolState.active === 'hand' ? 'grab' : (toolState.active === 'zoom' ? 'zoom-in' : 'default');
+
+        const baseBrush = fabricCanvas.freeDrawingBrush;
+        if (baseBrush) {
+            baseBrush.width = toolState.size;
+            baseBrush.color = toolState.color;
+            baseBrush.opacity = toolState.strength;
+        }
+
+        if (toolState.active === 'hand') {
+            fabricCanvas.setCursor('grab');
+        }
+
+        fabricCanvas.requestRenderAll();
+    }
+
+    function isFabricToolActive() {
+        if (!fabricCanvas) return false;
+        const upper = fabricCanvas.upperCanvasEl;
+        return upper && upper.style.pointerEvents !== 'none';
+    }
+
     // --- Initialization ---
     // Create a default empty canvas on load
     window.onload = () => {
         createBlankCanvas(800, 600, '#1e1e1e');
+        initFabricCanvas();
+        bindToolRail();
     };
+
+    window.addEventListener('resize', syncOverlaySize);
 
     // --- UI Event Bindings ---
     newCanvasBtn.addEventListener('click', showModal);
     openImageBtn.addEventListener('click', () => fileInput.click());
-    exportBtn.addEventListener('click', downloadImage);
+    exportBtn.addEventListener('click', () => downloadImage('image/jpeg'));
+    if (exportPngBtn) exportPngBtn.addEventListener('click', () => downloadImage('image/png'));
     cancelNewCanvasBtn.addEventListener('click', closeModal);
     createCanvasBtn.addEventListener('click', createCustomCanvas);
     cropModeBtn.addEventListener('click', initCrop);
@@ -341,6 +878,7 @@
                 isImageLoaded = true;
                 setImageInfoText(describeFit(incoming.width, incoming.height));
                 updateLayerUI();
+                syncOverlaySize();
                 render();
 
                 // After placing the first image, leave canvas sizing to user unless they create a new canvas
@@ -551,6 +1089,10 @@
         flipV = 1;
         resetAdjustments();
         layers.forEach(layer => { if (!layer.isBackground) { layer.x = 0; layer.y = 0; layer.rotation = 0; } });
+        if (fabricCanvas) {
+            fabricCanvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+            fabricCanvas.requestRenderAll();
+        }
     }
 
     function resetAll() {
@@ -603,6 +1145,7 @@
             customCanvasActive = true;
             useCanvasFit = true;
             setImageInfoText(`Canvas ${w}x${h} (blank)`);
+            syncOverlaySize();
             updateLayerUI();
             syncLayerEffectsUI();
             render();
@@ -699,6 +1242,7 @@
 
     // --- Layer Dragging ---
     canvas.addEventListener('mousedown', (e) => {
+        if (isFabricToolActive()) return;
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left - canvas.width / 2;
         const y = e.clientY - rect.top - canvas.height / 2;
@@ -721,6 +1265,7 @@
     });
 
     window.addEventListener('mousemove', (e) => {
+        if (isFabricToolActive()) return;
         if (!layerDrag.dragging) return;
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left - canvas.width / 2;
@@ -738,6 +1283,7 @@
     });
 
     window.addEventListener('mouseup', () => {
+        if (isFabricToolActive()) return;
         layerDrag.dragging = false;
         layerDrag.id = null;
     });
@@ -827,6 +1373,8 @@
             customCanvasActive = false;
             useCanvasFit = false;
 
+            syncOverlaySize();
+
             // Important: Reset filters/rotation because we "baked" them into the crop
             resetAllState();
             cancelCrop();
@@ -839,7 +1387,7 @@
     }
 
     // --- Download ---
-    function downloadImage() {
+    function downloadImage(mime = 'image/jpeg') {
         // We must draw the current state to a fresh canvas to catch filters
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
@@ -885,8 +1433,9 @@
         }
 
         const link = document.createElement('a');
-        link.download = 'edited-image.jpg';
-        link.href = tempCanvas.toDataURL('image/jpeg', 0.9);
+        const ext = mime === 'image/png' ? 'png' : 'jpg';
+        link.download = `edited-image.${ext}`;
+        link.href = mime === 'image/png' ? tempCanvas.toDataURL('image/png') : tempCanvas.toDataURL('image/jpeg', 0.9);
         link.click();
     }
 

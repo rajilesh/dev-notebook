@@ -105,6 +105,12 @@
             line-height: 0;
         }
 
+        #fabricOverlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
         canvas {
             max-width: 100%;
             max-height: 100%;
@@ -321,6 +327,58 @@
             min-width: 180px;
         }
 
+        /* Tool rail */
+        .tool-rail {
+            width: 64px;
+            background: #1c1c1c;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 6px 4px;
+            gap: 4px;
+            overflow-y: auto;
+        }
+
+        .tool-rail-btn {
+            width: 100%;
+            height: 36px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #eee;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .tool-rail-btn.active {
+            border-color: var(--accent);
+            background: #2f3b45;
+            color: #fff;
+        }
+
+        .tool-rail-controls {
+            margin-top: 6px;
+            padding: 6px;
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .rail-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 11px;
+            color: #ccc;
+        }
+
+        .rail-row input[type="range"] {
+            width: 100%;
+        }
+
     </style>
 </head>
 <body>
@@ -356,13 +414,47 @@
         <button id="openImageBtn">Open Image</button>
         <input type="file" id="fileInput" accept="image/*">
         <button class="primary" id="exportBtn">Export JPG</button>
+        <button class="primary" id="exportPngBtn">Export PNG</button>
     </div>
 </header>
 
 <div class="workspace">
+    <div class="tool-rail" id="toolRail">
+        <button class="tool-rail-btn" data-tool="move" title="Move">⌖</button>
+        <button class="tool-rail-btn" data-tool="lasso" title="Lasso">🪢</button>
+        <button class="tool-rail-btn" data-tool="quickselect" title="Quick Select">⚡</button>
+        <button class="tool-rail-btn" data-tool="magicwand" title="Magic Wand">✨</button>
+        <button class="tool-rail-btn" data-tool="crop" title="Crop">✂</button>
+        <button class="tool-rail-btn" data-tool="eyedropper" title="Eyedropper">🎯</button>
+        <button class="tool-rail-btn" data-tool="spotheal" title="Spot Heal">🩹</button>
+        <button class="tool-rail-btn" data-tool="brush" title="Brush">🖌</button>
+        <button class="tool-rail-btn" data-tool="clone" title="Clone Stamp">🧬</button>
+        <button class="tool-rail-btn" data-tool="eraser" title="Eraser">⌫</button>
+        <button class="tool-rail-btn" data-tool="bucket" title="Paint Bucket">🪣</button>
+        <button class="tool-rail-btn" data-tool="gradient" title="Gradient">🌈</button>
+        <button class="tool-rail-btn" data-tool="blur" title="Blur">💧</button>
+        <button class="tool-rail-btn" data-tool="sharpen" title="Sharpen">🔪</button>
+        <button class="tool-rail-btn" data-tool="smudge" title="Smudge">🌀</button>
+        <button class="tool-rail-btn" data-tool="dodge" title="Dodge">🔆</button>
+        <button class="tool-rail-btn" data-tool="burn" title="Burn">🔥</button>
+        <button class="tool-rail-btn" data-tool="sponge" title="Sponge">🧽</button>
+        <button class="tool-rail-btn" data-tool="pen" title="Pen">✒</button>
+        <button class="tool-rail-btn" data-tool="pathSelect" title="Path Select">🧭</button>
+        <button class="tool-rail-btn" data-tool="directSelect" title="Direct Select">◯</button>
+        <button class="tool-rail-btn" data-tool="type" title="Type">T</button>
+        <button class="tool-rail-btn" data-tool="hand" title="Hand/Pan">✋</button>
+        <button class="tool-rail-btn" data-tool="zoom" title="Zoom">🔍</button>
+        <div class="tool-rail-controls">
+            <label class="rail-row">Color <input type="color" id="toolColor" value="#ffffff"></label>
+            <label class="rail-row">Size <input type="range" id="toolSize" min="1" max="200" value="24"></label>
+            <label class="rail-row">Strength <input type="range" id="toolStrength" min="1" max="100" value="50"></label>
+        </div>
+    </div>
+
     <div class="canvas-container" id="dropZone">
         <div class="canvas-wrapper" id="canvasWrapper">
             <canvas id="editorCanvas"></canvas>
+            <canvas id="fabricOverlay"></canvas>
             
             <div id="cropBox" class="crop-overlay">
                 <div class="crop-handle tl" data-handle="tl"></div>
@@ -489,6 +581,7 @@
         </div>
     </aside>
 </div>
+<script src="fabric.js"></script>
 <script src="photoeditor.js"></script>
 </body>
 </html>
