@@ -240,6 +240,12 @@
             margin-top: 8px;
         }
 
+        .layer-actions.layer-add-actions {
+            grid-template-columns: repeat(2, 1fr);
+            margin-top: 0;
+            margin-bottom: 8px;
+        }
+
         .layer-scale-row {
             margin-top: 10px;
         }
@@ -249,6 +255,35 @@
             justify-content: space-between;
             font-size: 12px;
             margin-bottom: 6px;
+        }
+
+        .split-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .dual-inputs {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 6px;
+            align-items: center;
+        }
+
+        .dual-inputs label {
+            margin: 0;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .dual-inputs input[type="number"] {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 6px 4px;
+            height: 32px;
         }
 
         /* --- Modals --- */
@@ -356,6 +391,10 @@
 
         <div class="tool-group">
             <h3>Layers</h3>
+            <div class="layer-actions layer-add-actions">
+                <button class="btn-tool" id="addLayerBtn">➕ Empty</button>
+                <button class="btn-tool" id="addSmartLayerBtn">🧠 Smart</button>
+            </div>
             <div id="layersList" class="layer-list"></div>
             <div class="layer-actions">
                 <button class="btn-tool" id="layerUpBtn">⬆</button>
@@ -366,6 +405,38 @@
                 <label>Scale <span id="layerScaleLabel">100%</span></label>
                 <input type="range" id="layerScale" min="10" max="300" value="100">
                 <button class="btn-tool btn-full" id="layerFitBtn">Fit to Canvas</button>
+            </div>
+        </div>
+
+        <div class="tool-group">
+            <h3>Layer Effects</h3>
+            <div class="control-row">
+                <label>Opacity <span id="layerOpacityLabel">100%</span></label>
+                <input type="range" id="layerOpacity" min="0" max="100" value="100">
+            </div>
+            <div class="control-row">
+                <label>Layer Blur <span id="layerBlurLabel">0px</span></label>
+                <input type="range" id="layerBlur" min="0" max="25" value="0">
+            </div>
+            <div class="control-row split-row">
+                <label>Shadow</label>
+                <input type="checkbox" id="layerShadowToggle">
+            </div>
+            <div class="control-row dual-inputs">
+                <label for="layerShadowX">Offset X</label>
+                <input type="number" id="layerShadowX" value="8">
+                <label for="layerShadowY">Offset Y</label>
+                <input type="number" id="layerShadowY" value="8">
+            </div>
+            <div class="control-row dual-inputs">
+                <label for="layerShadowBlur">Blur</label>
+                <input type="number" id="layerShadowBlur" value="20">
+                <label for="layerShadowOpacity">Opacity</label>
+                <input type="number" id="layerShadowOpacity" min="0" max="1" step="0.05" value="0.35">
+            </div>
+            <div class="control-row">
+                <label for="layerShadowColor">Shadow Color</label>
+                <input type="color" id="layerShadowColor" value="#000000">
             </div>
         </div>
 

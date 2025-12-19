@@ -33,6 +33,18 @@
     const layerScaleInput = document.getElementById('layerScale');
     const layerScaleLabel = document.getElementById('layerScaleLabel');
     const layerFitBtn = document.getElementById('layerFitBtn');
+    const addLayerBtn = document.getElementById('addLayerBtn');
+    const addSmartLayerBtn = document.getElementById('addSmartLayerBtn');
+    const layerOpacityInput = document.getElementById('layerOpacity');
+    const layerOpacityLabel = document.getElementById('layerOpacityLabel');
+    const layerBlurInput = document.getElementById('layerBlur');
+    const layerBlurLabel = document.getElementById('layerBlurLabel');
+    const layerShadowToggle = document.getElementById('layerShadowToggle');
+    const layerShadowXInput = document.getElementById('layerShadowX');
+    const layerShadowYInput = document.getElementById('layerShadowY');
+    const layerShadowBlurInput = document.getElementById('layerShadowBlur');
+    const layerShadowOpacityInput = document.getElementById('layerShadowOpacity');
+    const layerShadowColorInput = document.getElementById('layerShadowColor');
 
     // State Variables
     let img = new Image(); // The source image (always unmodified pixels)
@@ -58,6 +70,46 @@
         hue: 0
     };
     let filters = { ...defaultFilters };
+
+    function cloneLayerEffects(base = defaultLayerEffects) {
+        return {
+            opacity: base.opacity,
+            blur: base.blur,
+            blendMode: base.blendMode,
+            shadow: { ...base.shadow }
+        };
+    }
+
+    function ensureLayerEffects(layer) {
+        if (!layer.effects) layer.effects = cloneLayerEffects();
+        if (!layer.effects.shadow) layer.effects.shadow = { ...defaultLayerEffects.shadow };
+        if (layer.effects.shadow && !layer.effects.shadow.hex) layer.effects.shadow.hex = '#000000';
+        return layer.effects;
+    }
+
+    function hexToRgba(hex, alpha = 1) {
+        const sanitized = hex.replace('#', '');
+        const bigint = parseInt(sanitized, 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    const defaultLayerEffects = {
+        opacity: 1,
+        blur: 0,
+        blendMode: 'source-over',
+        shadow: {
+            enabled: false,
+            x: 8,
+            y: 8,
+            blur: 20,
+            opacity: 0.35,
+            hex: '#000000',
+            color: 'rgba(0,0,0,0.35)'
+        }
+    };
 
     function setImageInfoText(text) {
         if (!imageInfo) return;
@@ -101,7 +153,9 @@
             y: 0,
             scale: baseScale,
             rotation: 0,
-            visible: true
+            visible: true,
+            isSmart: false,
+            effects: cloneLayerEffects()
         };
         return layer;
     }
@@ -109,16 +163,19 @@
     function setActiveLayer(id) {
         activeLayerId = id;
         updateLayerUI();
+        syncLayerEffectsUI();
     }
 
     function updateLayerUI() {
         if (!layersList) return;
         layersList.innerHTML = '';
         layers.forEach(layer => {
+            ensureLayerEffects(layer);
             const div = document.createElement('div');
             div.className = 'layer-item' + (layer.id === activeLayerId ? ' active' : '');
             div.dataset.id = layer.id;
-            div.innerHTML = `<span>${layer.name}</span><span>${Math.round(layer.scale * 100)}%</span>`;
+            const smartMark = layer.isSmart ? ' • Smart' : '';
+            div.innerHTML = `<span>${layer.name}${smartMark}</span><span>${Math.round(layer.scale * 100)}%</span>`;
             div.addEventListener('click', () => setActiveLayer(layer.id));
             layersList.appendChild(div);
         });
@@ -128,6 +185,35 @@
             layerScaleInput.value = Math.round(active.scale * 100);
             layerScaleLabel.textContent = `${Math.round(active.scale * 100)}%`;
         }
+    }
+
+    function syncLayerEffectsUI() {
+        const active = layers.find(l => l.id === activeLayerId);
+        if (!active) return;
+        const effects = ensureLayerEffects(active);
+        if (layerOpacityInput && layerOpacityLabel) {
+            layerOpacityInput.value = Math.round((effects.opacity ?? 1) * 100);
+            layerOpacityLabel.textContent = `${Math.round((effects.opacity ?? 1) * 100)}%`;
+        }
+        if (layerBlurInput && layerBlurLabel) {
+            layerBlurInput.value = effects.blur ?? 0;
+            layerBlurLabel.textContent = `${effects.blur ?? 0}px`;
+        }
+        if (layerShadowToggle) layerShadowToggle.checked = !!effects.shadow.enabled;
+        if (layerShadowXInput) layerShadowXInput.value = effects.shadow.x;
+        if (layerShadowYInput) layerShadowYInput.value = effects.shadow.y;
+        if (layerShadowBlurInput) layerShadowBlurInput.value = effects.shadow.blur;
+        if (layerShadowOpacityInput) layerShadowOpacityInput.value = effects.shadow.opacity;
+        if (layerShadowColorInput) layerShadowColorInput.value = effects.shadow.hex || '#000000';
+    }
+
+    function updateActiveLayerEffects(partial) {
+        const active = layers.find(l => l.id === activeLayerId);
+        if (!active) return;
+        const effects = ensureLayerEffects(active);
+        active.effects = { ...effects, ...partial };
+        render();
+        updateLayerUI();
     }
 
     function updateCropBadge() {
@@ -205,6 +291,34 @@
         updateLayerUI();
     });
 
+    if (addLayerBtn) addLayerBtn.addEventListener('click', addEmptyLayer);
+    if (addSmartLayerBtn) addSmartLayerBtn.addEventListener('click', addSmartLayer);
+
+    if (layerOpacityInput) layerOpacityInput.addEventListener('input', () => {
+        const active = layers.find(l => l.id === activeLayerId);
+        if (!active) return;
+        const effects = ensureLayerEffects(active);
+        effects.opacity = layerOpacityInput.value / 100;
+        layerOpacityLabel.textContent = `${layerOpacityInput.value}%`;
+        render();
+    });
+
+    if (layerBlurInput) layerBlurInput.addEventListener('input', () => {
+        const active = layers.find(l => l.id === activeLayerId);
+        if (!active) return;
+        const effects = ensureLayerEffects(active);
+        effects.blur = parseInt(layerBlurInput.value, 10) || 0;
+        layerBlurLabel.textContent = `${effects.blur}px`;
+        render();
+    });
+
+    if (layerShadowToggle) layerShadowToggle.addEventListener('change', () => updateShadowFromUI());
+    if (layerShadowXInput) layerShadowXInput.addEventListener('input', () => updateShadowFromUI());
+    if (layerShadowYInput) layerShadowYInput.addEventListener('input', () => updateShadowFromUI());
+    if (layerShadowBlurInput) layerShadowBlurInput.addEventListener('input', () => updateShadowFromUI());
+    if (layerShadowOpacityInput) layerShadowOpacityInput.addEventListener('input', () => updateShadowFromUI());
+    if (layerShadowColorInput) layerShadowColorInput.addEventListener('input', () => updateShadowFromUI());
+
     function handleFiles(files) {
         const file = files[0];
         if (!file.type.startsWith('image/')) return;
@@ -237,6 +351,63 @@
         reader.readAsDataURL(file);
     }
 
+    function addEmptyLayer() {
+        const w = canvas.width || 800;
+        const h = canvas.height || 600;
+        const temp = document.createElement('canvas');
+        temp.width = w;
+        temp.height = h;
+        const imgEl = new Image();
+        imgEl.onload = () => {
+            const layer = createLayerFromImage(imgEl, 'Empty Layer');
+            layer.isSmart = false;
+            layer.effects = cloneLayerEffects();
+            layers.push(layer);
+            setActiveLayer(layer.id);
+            updateLayerUI();
+            render();
+        };
+        imgEl.src = temp.toDataURL();
+    }
+
+    function addSmartLayer() {
+        const source = layers.find(l => l.id === activeLayerId) || layers[0];
+        if (!source) return;
+        const imgEl = new Image();
+        imgEl.onload = () => {
+            const layer = createLayerFromImage(imgEl, `${source.name} (Smart)`);
+            layer.isSmart = true;
+            layer.effects = cloneLayerEffects(source.effects || defaultLayerEffects);
+            layer.w = source.w;
+            layer.h = source.h;
+            layer.x = source.x;
+            layer.y = source.y;
+            layer.scale = source.scale;
+            layer.rotation = source.rotation;
+            layers.push(layer);
+            setActiveLayer(layer.id);
+            updateLayerUI();
+            render();
+        };
+        imgEl.src = source.img.src;
+    }
+
+    function updateShadowFromUI() {
+        const active = layers.find(l => l.id === activeLayerId);
+        if (!active) return;
+        const effects = ensureLayerEffects(active);
+        const shadow = effects.shadow;
+        if (layerShadowToggle) shadow.enabled = layerShadowToggle.checked;
+        if (layerShadowXInput) shadow.x = parseFloat(layerShadowXInput.value) || 0;
+        if (layerShadowYInput) shadow.y = parseFloat(layerShadowYInput.value) || 0;
+        if (layerShadowBlurInput) shadow.blur = parseFloat(layerShadowBlurInput.value) || 0;
+        if (layerShadowOpacityInput) shadow.opacity = parseFloat(layerShadowOpacityInput.value) || 0;
+        if (layerShadowColorInput) shadow.hex = layerShadowColorInput.value || '#000000';
+        shadow.color = hexToRgba(shadow.hex, shadow.opacity);
+        render();
+        updateLayerUI();
+    }
+
     // --- Core Rendering Engine ---
     function render() {
         if (!canvas.width) return;
@@ -264,14 +435,29 @@
             blur(${filters.blur}px) 
             hue-rotate(${filters.hue}deg)
         `;
-        ctx.filter = filterString;
+        const baseFilter = filterString.replace(/\s+/g, ' ').trim();
 
         // 4. Draw Layers (centered)
-        ctx.translate(canvas.width / 2, canvas.height / 2);
         if (layers.length) {
             layers.forEach(layer => {
                 if (!layer.visible) return;
                 ctx.save();
+                const effects = ensureLayerEffects(layer);
+                const layerBlur = effects.blur || 0;
+                ctx.filter = layerBlur ? `${baseFilter} blur(${layerBlur}px)` : baseFilter;
+                ctx.globalAlpha = effects.opacity ?? 1;
+                ctx.globalCompositeOperation = effects.blendMode || 'source-over';
+                if (effects.shadow && effects.shadow.enabled) {
+                    ctx.shadowColor = effects.shadow.color || hexToRgba(effects.shadow.hex, effects.shadow.opacity);
+                    ctx.shadowOffsetX = effects.shadow.x;
+                    ctx.shadowOffsetY = effects.shadow.y;
+                    ctx.shadowBlur = effects.shadow.blur;
+                } else {
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                    ctx.shadowBlur = 0;
+                }
                 ctx.translate(layer.x, layer.y);
                 ctx.rotate(layer.rotation);
                 const drawW = layer.w * layer.scale;
@@ -281,6 +467,10 @@
             });
         } else {
             // Fallback to blank canvas render
+            ctx.filter = baseFilter;
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.shadowColor = 'transparent';
             ctx.fillStyle = img.src || '#ffffff';
             ctx.fillRect(-canvas.width/2, -canvas.height/2, canvas.width, canvas.height);
         }
@@ -307,8 +497,9 @@
     }
 
     // Bind inputs so slider movements keep filters in sync
-    document.querySelectorAll('input[type=range]').forEach(input => {
-        input.addEventListener('input', updateFiltersFromInputs);
+    ['brightness', 'contrast', 'saturate', 'blur', 'hue-rotate'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', updateFiltersFromInputs);
     });
 
     // --- Transforms ---
@@ -398,7 +589,9 @@
                 scale: 1,
                 rotation: 0,
                 visible: true,
-                isBackground: true
+                isBackground: true,
+                isSmart: false,
+                effects: cloneLayerEffects()
             }];
             activeLayerId = layers[0].id;
             isImageLoaded = true;
@@ -407,6 +600,7 @@
             useCanvasFit = true;
             setImageInfoText(`Canvas ${w}x${h} (blank)`);
             updateLayerUI();
+            syncLayerEffectsUI();
             render();
         };
         bgImg.src = tempCanvas.toDataURL();
@@ -612,6 +806,7 @@
             cancelCrop();
             setImageInfoText(`Cropped to ${cw}x${ch}`);
             updateLayerUI();
+            syncLayerEffectsUI();
             render();
         };
         flattened.src = finalCanvas.toDataURL();
