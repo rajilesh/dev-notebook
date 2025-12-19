@@ -2,6 +2,7 @@
 const appContainer = document.querySelector('.app-container');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
 const excalidraw = document.getElementById('excalidraw');
+const photoeditor = document.getElementById('photoeditor');
 
 // Note Elements
 // Legacy notesListEl removed
@@ -13,6 +14,7 @@ const searchInput = document.getElementById('search-input');
 const deleteBtn = document.getElementById('delete-note-btn');
 const statusEl = document.getElementById('save-status');
 const openDrawBtn = document.getElementById('open-draw-btn');
+const openPhotoeditorBtn = document.getElementById('open-photoeditor-btn');
 const backToNotesBtn = document.getElementById('back-to-notes-btn');
 const shareBtn = document.getElementById('share-btn');
 const exportSingleBtn = document.getElementById('export-single-btn');
@@ -1989,12 +1991,20 @@ window.addEventListener('click', (e) => {
 // Share/Export/Import
 // Share/Export/Import
 openDrawBtn.addEventListener('click', () => {
+    photoeditor.classList.remove('active');
     excalidraw.classList.add('active');
+    backToNotesBtn.classList.add('active');
+    fabAddBtn.classList.add('hide');
+});
+openPhotoeditorBtn.addEventListener('click', () => {
+    excalidraw.classList.remove('active');
+    photoeditor.classList.add('active');
     backToNotesBtn.classList.add('active');
     fabAddBtn.classList.add('hide');
 });
 backToNotesBtn.addEventListener('click', () => {
     excalidraw.classList.remove('active');
+    photoeditor.classList.remove('active');
     backToNotesBtn.classList.remove('active');
     fabAddBtn.classList.remove('hide');
 });
