@@ -24,6 +24,8 @@
     const presetVintageBtn = document.getElementById('presetVintageBtn');
     const cancelCropBtn = document.getElementById('cancelCropBtn');
     const applyCropBtn = document.getElementById('applyCropBtn');
+    const imageInfo = document.getElementById('imageInfo');
+    const cropSizeBadge = document.getElementById('cropSizeBadge');
 
     // State Variables
     let img = new Image(); // The source image (always unmodified pixels)
@@ -31,6 +33,9 @@
     let rotation = 0;
     let flipH = 1;
     let flipV = 1;
+    let customCanvasActive = true; // when true, keep canvas size on incoming images
+    let useCanvasFit = true; // when true, scale image to cover canvas
+    const fitMode = 'cover';
 
     // Filter Defaults
     const defaultFilters = {
@@ -41,6 +46,44 @@
         hue: 0
     };
     let filters = { ...defaultFilters };
+
+    function setImageInfoText(text) {
+        if (!imageInfo) return;
+        imageInfo.textContent = text;
+    }
+
+    function getDrawDimensions(sourceWidth = img.width, sourceHeight = img.height) {
+        if (!sourceWidth || !sourceHeight) {
+            return { drawW: canvas.width, drawH: canvas.height, scale: 1 };
+        }
+
+        if (!useCanvasFit) {
+            return { drawW: sourceWidth, drawH: sourceHeight, scale: 1 };
+        }
+
+        const scale = fitMode === 'cover'
+            ? Math.max(canvas.width / sourceWidth, canvas.height / sourceHeight)
+            : Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight);
+
+        return { drawW: sourceWidth * scale, drawH: sourceHeight * scale, scale };
+    }
+
+    function describeFit(sourceWidth, sourceHeight) {
+        if (!canvas.width || !canvas.height) return '';
+        const { drawW, drawH, scale } = getDrawDimensions(sourceWidth, sourceHeight);
+        if (useCanvasFit) {
+            return `Image ${sourceWidth}x${sourceHeight} -> canvas ${canvas.width}x${canvas.height} (cover ${scale.toFixed(2)}x, draw ${Math.round(drawW)}x${Math.round(drawH)})`;
+        }
+        return `Image ${sourceWidth}x${sourceHeight} (canvas resized to image)`;
+    }
+
+    function updateCropBadge() {
+        if (!cropSizeBadge) return;
+        const style = window.getComputedStyle(cropBox);
+        const width = Math.max(0, Math.round(parseFloat(style.width)));
+        const height = Math.max(0, Math.round(parseFloat(style.height)));
+        cropSizeBadge.textContent = width && height ? `${width}px × ${height}px` : '';
+    }
 
     // --- Initialization ---
     // Create a default empty canvas on load
@@ -101,18 +144,28 @@
 
         const reader = new FileReader();
         reader.onload = (e) => {
-            img = new Image();
-            img.onload = () => {
-                // Reset state
+            const incoming = new Image();
+            incoming.onload = () => {
+                img = incoming;
                 resetAllState();
-                
-                // Set Canvas Size
-                canvas.width = img.width;
-                canvas.height = img.height;
                 isImageLoaded = true;
+
+                const shouldFitToCanvas = customCanvasActive && canvas.width && canvas.height;
+                useCanvasFit = shouldFitToCanvas;
+
+                if (!shouldFitToCanvas) {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    useCanvasFit = false;
+                }
+
+                setImageInfoText(describeFit(img.width, img.height));
                 render();
+
+                // After placing an image, require explicit "New Canvas" to keep fitting
+                customCanvasActive = false;
             };
-            img.src = e.target.result;
+            incoming.src = e.target.result;
         };
         reader.readAsDataURL(file);
     }
@@ -149,7 +202,8 @@
         // 4. Draw Image (centered)
         // If image is loaded, draw it. If not, we are in "Color Canvas" mode, just fill rect.
         if (isImageLoaded) {
-            ctx.drawImage(img, -img.width / 2, -img.height / 2);
+            const { drawW, drawH } = getDrawDimensions();
+            ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
         } else {
             // If it's a blank canvas project, the "img" object might be a 1x1 color pixel or we just draw background
             // For simplicity, if isImageLoaded is false, we rely on the background fill created during 'createBlankCanvas'
@@ -262,6 +316,10 @@
         img.onload = () => {
             isImageLoaded = true;
             resetAllState();
+            customCanvasActive = true;
+            useCanvasFit = true;
+            setImageInfoText(`Canvas ${w}x${h} (blank)`);
+            render();
         };
         img.src = tempCanvas.toDataURL();
     }
@@ -287,12 +345,14 @@
         cropBox.style.top = margin + 'px';
         cropBox.style.width = (canvas.width - margin*2) + 'px';
         cropBox.style.height = (canvas.height - margin*2) + 'px';
+        updateCropBadge();
     }
 
     function cancelCrop() {
         isCropping = false;
         cropBox.style.display = 'none';
         document.getElementById('btnCrop').classList.remove('active');
+        if (cropSizeBadge) cropSizeBadge.textContent = '';
     }
 
     // Crop Interactions
@@ -346,6 +406,7 @@
 
         startX = e.clientX;
         startY = e.clientY;
+        updateCropBadge();
     });
 
     window.addEventListener('mouseup', () => { isDragging = false; currentHandle = null; });
@@ -363,7 +424,8 @@
         tCtx.rotate(rotation * Math.PI / 180);
         tCtx.scale(flipH, flipV);
         tCtx.filter = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) blur(${filters.blur}px) hue-rotate(${filters.hue}deg)`;
-        tCtx.drawImage(img, -img.width / 2, -img.height / 2);
+        const { drawW, drawH } = getDrawDimensions();
+        tCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
         tCtx.restore();
 
         // 2. Calculate crop coordinates relative to the Canvas element
@@ -396,10 +458,15 @@
             // 5. Reset UI
             canvas.width = cw;
             canvas.height = ch;
-            
+            isImageLoaded = true;
+            customCanvasActive = false;
+            useCanvasFit = false;
+
             // Important: Reset filters/rotation because we "baked" them into the crop
             resetAllState();
             cancelCrop();
+            setImageInfoText(`Cropped to ${cw}x${ch}`);
+            render();
         }
     }
 
@@ -416,7 +483,8 @@
         tCtx.rotate(rotation * Math.PI / 180);
         tCtx.scale(flipH, flipV);
         tCtx.filter = `brightness(${filters.brightness}%) contrast(${filters.contrast}%) saturate(${filters.saturate}%) blur(${filters.blur}px) hue-rotate(${filters.hue}deg)`;
-        tCtx.drawImage(img, -img.width / 2, -img.height / 2);
+        const { drawW, drawH } = getDrawDimensions();
+        tCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
 
         const link = document.createElement('a');
         link.download = 'edited-image.jpg';
