@@ -3,7 +3,8 @@
  * Handles API calls to various AI providers.
  */
 
-async function callAIProvider(provider, apiKey, model, prompt, systemInstruction) {
+async function callAIProvider(provider, apiKey, model, prompt, systemInstruction, options = {}) {
+    const { signal } = options;
     const systemPrompt = systemInstruction || "You are a helpful assistant that generates notes. Please provide the response in JSON format with 'title' and 'content' fields. The content should be formatted in Markdown.";
     
     let url, headers, body;
@@ -156,6 +157,9 @@ async function callAIProvider(provider, apiKey, model, prompt, systemInstruction
                 ]
             });
             break;
+
+        case 'webai':
+            return await callWebAINonStreaming(prompt, systemPrompt);
             
         default:
             throw new Error('Unknown provider');
@@ -165,7 +169,8 @@ async function callAIProvider(provider, apiKey, model, prompt, systemInstruction
         const response = await fetch(url, {
             method: 'POST',
             headers: headers,
-            body: body
+            body: body,
+            signal
         });
 
         if (!response.ok) {
@@ -198,7 +203,8 @@ async function callAIProvider(provider, apiKey, model, prompt, systemInstruction
  * Call AI Provider with Streaming Support
  * Returns a ReadableStream for streaming responses
  */
-async function callAIProviderStreaming(provider, apiKey, model, messages, onChunk, onComplete, onError) {
+async function callAIProviderStreaming(provider, apiKey, model, messages, onChunk, onComplete, onError, options = {}) {
+    const { signal } = options;
     let url, headers, body;
 
     // Prepare messages array based on provider format
@@ -279,6 +285,9 @@ async function callAIProviderStreaming(provider, apiKey, model, messages, onChun
                 stream: true
             });
             break;
+
+        case 'webai':
+            return await callWebAIStreaming(messages, onChunk, onComplete, onError, signal);
             
         default:
             throw new Error(`Streaming not supported for provider: ${provider}`);
@@ -288,7 +297,8 @@ async function callAIProviderStreaming(provider, apiKey, model, messages, onChun
         const response = await fetch(url, {
             method: 'POST',
             headers: headers,
-            body: body
+            body: body,
+            signal
         });
 
         if (!response.ok) {
@@ -302,6 +312,7 @@ async function callAIProviderStreaming(provider, apiKey, model, messages, onChun
         let fullText = '';
 
         while (true) {
+            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -344,6 +355,153 @@ async function callAIProviderStreaming(provider, apiKey, model, messages, onChun
         console.error('Streaming Error:', error);
         if (onError) onError(error);
         throw error;
+    }
+}
+
+// --- Chrome Web AI (Prompt API) Helpers ---
+
+async function ensureWebAIAvailable() {
+    let availability = 'unavailable';
+
+    try {
+        if (typeof LanguageModel !== 'undefined') {
+            availability = await LanguageModel.availability();
+        } else if (window.ai && window.ai.languageModel && window.ai.languageModel.availability) {
+            const res = await window.ai.languageModel.availability({ languages: ['en'] });
+            availability = res?.state || res;
+        }
+    } catch (e) {
+        availability = 'unavailable';
+    }
+
+    if (availability === 'unavailable') {
+        throw new Error('Web AI unavailable: enable Chrome built-in AI flags and restart.');
+    }
+    if (availability === 'downloadable' || availability === 'downloading') {
+        throw new Error('Web AI model is downloading. Wait for completion, then retry.');
+    }
+    if (availability !== 'available') {
+        throw new Error(`Web AI not ready (state: ${availability}).`);
+    }
+
+    if (!navigator.userActivation?.isActive) {
+        throw new Error('User activation required. Click or type on the page, then retry.');
+    }
+}
+
+function flattenMessageContent(msg) {
+    if (!msg) return '';
+    if (typeof msg === 'string') return msg;
+    if (Array.isArray(msg)) {
+        return msg.map(flattenMessageContent).join('\n');
+    }
+    if (typeof msg === 'object' && msg !== null) {
+        if (msg.text) return msg.text;
+        if (msg.content) return flattenMessageContent(msg.content);
+    }
+    return '';
+}
+
+function buildWebAIPrompt(messages, systemPrompt) {
+    let prompt = '';
+    if (systemPrompt) {
+        prompt += `${systemPrompt}\n\n`;
+    }
+    for (const msg of messages) {
+        const roleLabel = msg.role === 'assistant' ? 'Assistant' : 'User';
+        const text = flattenMessageContent(msg.content ?? msg.text ?? msg.message ?? '');
+        if (text) {
+            prompt += `${roleLabel}: ${text}\n`;
+        }
+    }
+    prompt += 'Assistant:';
+    return prompt;
+}
+
+function extractWebAIChunkText(chunk) {
+    if (!chunk) return '';
+    if (typeof chunk === 'string') return chunk;
+    if (chunk.outputText) return chunk.outputText;
+    if (chunk.text) return chunk.text;
+    if (chunk.output) return chunk.output;
+    if (chunk.candidates?.[0]?.outputText) return chunk.candidates[0].outputText;
+    if (chunk.candidates?.[0]?.text) return chunk.candidates[0].text;
+    const parts = chunk.message?.content || chunk.choices?.[0]?.delta?.content;
+    if (Array.isArray(parts)) {
+        return parts.map(p => (typeof p === 'string' ? p : p?.text || '')).join('');
+    }
+    return '';
+}
+
+async function callWebAINonStreaming(userPrompt, systemPrompt) {
+    await ensureWebAIAvailable();
+    if (typeof LanguageModel !== 'undefined') {
+        const session = await LanguageModel.create({
+            expectedInputs: [{ type: 'text', languages: ['en'] }],
+            expectedOutputs: [{ type: 'text', languages: ['en'] }]
+        });
+        const result = await session.prompt(userPrompt, { context: systemPrompt });
+        return result?.outputText ?? result ?? '';
+    }
+    const session = await window.ai.languageModel.create({ systemPrompt });
+    const result = await session.prompt(userPrompt);
+    return result?.outputText ?? result ?? '';
+}
+
+async function callWebAIStreaming(messages, onChunk, onComplete, onError, signal) {
+    try {
+        await ensureWebAIAvailable();
+        const promptText = buildWebAIPrompt(messages, undefined);
+
+        if (typeof LanguageModel !== 'undefined') {
+            const session = await LanguageModel.create({
+                expectedInputs: [{ type: 'text', languages: ['en'] }],
+                expectedOutputs: [{ type: 'text', languages: ['en'] }]
+            });
+            const stream = await session.promptStreaming(promptText);
+            if (signal) {
+                signal.addEventListener('abort', () => {
+                    if (stream?.return) stream.return();
+                }, { once: true });
+            }
+
+            let fullText = '';
+            for await (const chunk of stream) {
+                if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+                const piece = extractWebAIChunkText(chunk);
+                if (piece) {
+                    fullText += piece;
+                    if (onChunk) onChunk(piece, fullText);
+                }
+            }
+
+            if (onComplete) onComplete(fullText);
+            return fullText;
+        }
+
+        const session = await window.ai.languageModel.create();
+        const stream = await session.promptStreaming(promptText);
+        if (signal) {
+            signal.addEventListener('abort', () => {
+                if (stream?.return) stream.return();
+            }, { once: true });
+        }
+
+        let fullText = '';
+        for await (const chunk of stream) {
+            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+            const piece = extractWebAIChunkText(chunk);
+            if (piece) {
+                fullText += piece;
+                if (onChunk) onChunk(piece, fullText);
+            }
+        }
+
+        if (onComplete) onComplete(fullText);
+        return fullText;
+    } catch (err) {
+        if (onError) onError(err);
+        throw err;
     }
 }
 

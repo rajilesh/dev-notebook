@@ -2,6 +2,7 @@
 const appContainer = document.querySelector('.app-container');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
 const excalidraw = document.getElementById('excalidraw');
+const excalidrawBaseSrc = excalidraw ? excalidraw.getAttribute('src') : 'draw/index.html';
 const photoeditor = document.getElementById('photoeditor');
 
 // Note Elements
@@ -51,6 +52,7 @@ const manageKeysLink = document.getElementById('manage-keys-link');
 const aiPromptInput = document.getElementById('ai-prompt');
 const aiGenerateBtn = document.getElementById('ai-generate-btn');
 const aiLoading = document.getElementById('ai-loading');
+const aiStopBtn = document.getElementById('ai-stop-btn');
 const aiError = document.getElementById('ai-error');
 const aiPreviewSection = document.getElementById('ai-preview-section');
 const aiPreviewTitle = document.getElementById('ai-preview-title');
@@ -62,6 +64,14 @@ const aiTodosPreviewList = document.getElementById('ai-todos-preview-list');
 const aiTodosApplyBtn = document.getElementById('ai-todos-apply-btn');
 const aiTodosCancelBtn = document.getElementById('ai-todos-cancel-btn');
 const aiSnippetsMenu = document.getElementById('ai-snippets-menu');
+const webaiStatus = document.getElementById('webai-status');
+const webaiStatusText = document.getElementById('webai-status-text');
+const webaiDownloadBtn = document.getElementById('webai-download-btn');
+const webaiCancelBtn = document.getElementById('webai-cancel-btn');
+const webaiProgress = document.getElementById('webai-progress');
+const webaiProgressLabel = document.getElementById('webai-progress-label');
+const webaiManageBtn = document.getElementById('webai-manage-btn');
+const webaiHelpBtn = document.getElementById('webai-help-btn');
 
 // Chat Mode Elements
 const aiTypeSelect = document.getElementById('ai-type-select');
@@ -72,6 +82,16 @@ const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
 const aiChatAttachBtn = document.getElementById('ai-chat-attach-btn');
 const aiChatFileInput = document.getElementById('ai-chat-file-input');
 const aiChatAttachments = document.getElementById('ai-chat-attachments');
+const webaiStorageModal = document.getElementById('webai-storage-modal');
+const closeWebaiStorageBtn = document.getElementById('close-webai-storage-btn');
+const webaiDeleteBtn = document.getElementById('webai-delete-btn');
+const webaiStorageEstimate = document.getElementById('webai-storage-estimate');
+const webaiStatusSummary = document.getElementById('webai-status-summary');
+const webaiModelsList = document.getElementById('webai-models-list');
+const webaiGuidesList = document.getElementById('webai-guides-list');
+const webaiDownloadBtnModal = document.getElementById('webai-download-btn-modal');
+const webaiCancelBtnModal = document.getElementById('webai-cancel-btn-modal');
+let webAIIntentActive = false;
 
 // Media Generation Elements
 const mediaGenerationModal = document.getElementById('media-generation-modal');
@@ -100,6 +120,11 @@ const mediaProviderText = document.getElementById('media-provider-text');
 let chatHistory = [];
 let chatAttachedFiles = [];
 let isStreamingChat = false;
+let aiAbortController = null;
+
+// WebAI download state
+let webaiDownloadSession = null;
+let webaiDownloadCanceled = false;
 
 // Media State
 let currentMediaType = 'image';
@@ -129,6 +154,7 @@ let AI_SNIPPETS = [...DEFAULT_AI_SNIPPETS];
 // Settings Elements for AI
 const enableOpenAI = document.getElementById('enable-openai');
 const enableGemini = document.getElementById('enable-gemini');
+const enableWebAI = document.getElementById('enable-webai');
 const enableAnthropic = document.getElementById('enable-anthropic');
 const enableXAI = document.getElementById('enable-xai');
 const enableDeepSeek = document.getElementById('enable-deepseek');
@@ -140,6 +166,7 @@ const enableAlibaba = document.getElementById('enable-alibaba');
 
 const openaiKeyContainer = document.getElementById('openai-key-container');
 const geminiKeyContainer = document.getElementById('gemini-key-container');
+const webaiKeyContainer = document.getElementById('webai-key-container');
 const anthropicKeyContainer = document.getElementById('anthropic-key-container');
 const xaiKeyContainer = document.getElementById('xai-key-container');
 const deepseekKeyContainer = document.getElementById('deepseek-key-container');
@@ -202,6 +229,14 @@ const copyBtns = document.querySelectorAll('.copy-btn');
 
 // AI Models Configuration
 const ALL_MODELS = {
+    webai: {
+        name: 'Google Web AI (On-device)',
+        models: [
+            { id: 'chrome-gemini-nano', name: 'Gemini Nano (Chrome built-in)' },
+            { id: 'chrome-prompt-api', name: 'Chrome Prompt API' },
+            { id: 'chrome-summarizer', name: 'Chrome Summarizer API' }
+        ]
+    },
     openai: {
         name: 'OpenAI',
         models: [
@@ -312,6 +347,7 @@ let aiSettings = {
     providers: {
         openai: true,
         gemini: true,
+        webai: true,
         anthropic: true,
         xai: true,
         deepseek: true,
@@ -323,6 +359,7 @@ let aiSettings = {
     },
     openaiKey: '',
     geminiKey: '',
+    webaiKey: '',
     anthropicKey: '',
     xaiKey: '',
     deepseekKey: '',
@@ -335,6 +372,9 @@ let aiSettings = {
     systemInstruction: "You are a helpful assistant that generates notes. Please provide the response in JSON format with 'title' and 'content' fields. The content should be formatted in Markdown."
 };
 
+// Draw State (used for creating new canvases)
+let drawCollabLinkUrl = '';
+
 
 // --- State ---
 let workspaces = [];
@@ -343,6 +383,7 @@ let activeProjectId = null;
 let activeItemType = 'note'; // 'note', 'bookmark', 'credential'
 let activeItemId = null; // Replaces activeNoteId
 let selectedItemIds = new Set(); // For Multi-selection
+let lastPrimaryView = { type: 'note', itemId: null };
 
 
 // Legacy state for migration reference (will be removed/unused after migration)
@@ -932,6 +973,7 @@ function renderSidebarControls() {
 
 function renderItemsList() {
     itemsListEl.innerHTML = '';
+
     const currentProject = getCurrentProject();
     if (!currentProject) return;
 
@@ -960,6 +1002,8 @@ function renderItemsList() {
             subText = item.url || '';
         } else if (item.type === 'credential') {
             subText = item.username || '********';
+        } else if (item.type === 'draw') {
+            subText = item.drawUrl || 'Tap to open';
         }
 
         if (searchTerm) {
@@ -968,9 +1012,9 @@ function renderItemsList() {
         }
 
         if (match) {
-            // Add open link button for bookmarks
-            const openLinkBtn = item.type === 'bookmark' ? `
-                <button class="note-item-open-link-btn" title="Open Link">
+            // Add open link button for bookmarks/draw
+            const openLinkBtn = item.type === 'bookmark' || item.type === 'draw' ? `
+                <button class="note-item-open-link-btn" title="Open">
                     <span class="material-icons">open_in_new</span>
                 </button>
             ` : '';
@@ -994,14 +1038,17 @@ function renderItemsList() {
                 handleItemClick(e, item.id, filteredItems);
             });
 
-            // Open Link Handler (for bookmarks)
-            if (item.type === 'bookmark') {
+            // Open Link Handler (for bookmarks/draw)
+            if (item.type === 'bookmark' || item.type === 'draw') {
                 const openLinkBtn = li.querySelector('.note-item-open-link-btn');
                 if (openLinkBtn) {
                     openLinkBtn.addEventListener('click', (e) => {
                         e.stopPropagation(); // Prevent item selection
-                        if (item.url) {
+                        if (item.type === 'bookmark' && item.url) {
                             window.open(item.url, '_blank');
+                        }
+                        if (item.type === 'draw') {
+                            setActiveItem(item.id, { openDraw: true });
                         }
                     });
                 }
@@ -1122,7 +1169,7 @@ function hideEditors() {
     document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
 }
 
-function openItemEditor(id) {
+function openItemEditor(id, { openDraw = false } = {}) {
     // Logic extracted from setActiveItem to just switch view without resetting list state
     const item = getItem(id);
     document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
@@ -1171,10 +1218,18 @@ function openItemEditor(id) {
         credentialUsernameInput.value = item.username || '';
         credentialPasswordInput.value = item.password || '';
         credentialNotesInput.value = item.notes || '';
+    } else if (item.type === 'draw') {
+        // Hide toolbar for non-note types
+        if (quillToolbar) {
+            quillToolbar.style.display = 'none';
+        }
+        if (openDraw) {
+            openDrawView(false, item.drawUrl || getDrawCollabLinkUrl(true));
+        }
     }
 }
 
-function setActiveItem(id) {
+function setActiveItem(id, { openDraw = false } = {}) {
     if (activeItemId !== id) {
         activeItemId = id;
         selectedItemIds.clear();
@@ -1182,10 +1237,28 @@ function setActiveItem(id) {
     }
 
     renderItemsList();
-    openItemEditor(id);
+    openItemEditor(id, { openDraw });
 }
 
 function createNewItem() {
+    if (activeItemType === 'draw') {
+        const proj = getCurrentProject();
+        if (!proj) return;
+
+        const newItem = {
+            id: Date.now().toString(),
+            type: 'draw',
+            title: 'New canvas',
+            created: new Date().toISOString(),
+            drawUrl: getDrawCollabLinkUrl(true)
+        };
+
+        proj.items.unshift(newItem);
+        saveWorkspaces();
+        setActiveItem(newItem.id, { openDraw: true });
+        return;
+    }
+
     const proj = getCurrentProject();
     if (!proj) return;
 
@@ -1222,14 +1295,28 @@ workspaceSelect.addEventListener('change', (e) => {
     saveWorkspaces();
     renderSidebarControls();
     renderItemsList();
-    createNewItem(); // Or select first
+    if (activeItemType === 'draw') {
+        const proj = getCurrentProject();
+        const firstDraw = proj ? proj.items.find(i => i.type === 'draw') : null;
+        if (firstDraw) setActiveItem(firstDraw.id);
+        else createNewItem();
+    } else {
+        createNewItem(); // Or select first
+    }
 });
 
 projectSelect.addEventListener('change', (e) => {
     activeProjectId = e.target.value;
     saveWorkspaces();
     renderItemsList();
-    createNewItem();
+    if (activeItemType === 'draw') {
+        const proj = getCurrentProject();
+        const firstDraw = proj ? proj.items.find(i => i.type === 'draw') : null;
+        if (firstDraw) setActiveItem(firstDraw.id);
+        else createNewItem();
+    } else {
+        createNewItem();
+    }
 });
 
 addWorkspaceBtn.addEventListener('click', async () => {
@@ -1272,6 +1359,14 @@ resourceTabs.forEach(btn => {
         btn.classList.add('active');
         activeItemType = btn.dataset.type;
         saveWorkspaces(); // Save state immediately
+
+        if (activeItemType === 'draw') {
+            activeItemId = null;
+            selectedItemIds.clear();
+            renderItemsList();
+            hideEditors();
+            return;
+        }
         renderItemsList();
         // Try to select first item of new type
         const proj = getCurrentProject();
@@ -1894,6 +1989,61 @@ function applyTheme(theme) {
     }
 }
 
+
+
+      // Generate a 20-char hex roomId (same size as the app’s default: 10 random bytes)
+function makeRoomId() {
+  const bytes = new Uint8Array(10);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join(""); // 20 hex chars
+}
+
+// Generate a URL-safe key (similar length/shape to the app’s default)
+function makeRoomKey() {
+  const bytes = new Uint8Array(16); // adjust length if you prefer
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/=+/g, "") // drop padding
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
+// Build the link you’ll give to the iframe
+function makeCollabLink(baseUrl) {
+  const roomId = makeRoomId();
+  const roomKey = makeRoomKey();
+  return {
+    roomId,
+    roomKey,
+    hash: `#room=${roomId},${roomKey}`, // or `#room_id=${roomId}&room_key=${roomKey}`
+    url: `${baseUrl.replace(/#.*$/, "")}#room=${roomId},${roomKey}`,
+  };
+}
+
+function getDrawCollabLinkUrl(forceRefresh = false) {
+    const baseUrl = excalidrawBaseSrc.replace(/#.*$/, '');
+    if (forceRefresh || !drawCollabLinkUrl) {
+        drawCollabLinkUrl = makeCollabLink(baseUrl).url;
+    }
+    return drawCollabLinkUrl;
+}
+
+function openDrawView(forceRefresh = true, targetUrl = null) {
+    lastPrimaryView = { type: activeItemType, itemId: activeItemId };
+    const link = targetUrl || getDrawCollabLinkUrl(forceRefresh);
+    photoeditor.classList.remove('active');
+    excalidraw.setAttribute('src', "");
+    setTimeout(() => {
+        
+    excalidraw.setAttribute('src', link);
+    excalidraw.classList.add('active');
+    backToNotesBtn.classList.add('active');
+    fabAddBtn.classList.add('hide');
+    }, 100);
+    return link;
+}
+
+
 // --- Event Listeners ---
 toggleSidebarBtn.addEventListener('click', () => {
     appContainer.classList.toggle('sidebar-open');
@@ -1991,12 +2141,11 @@ window.addEventListener('click', (e) => {
 // Share/Export/Import
 // Share/Export/Import
 openDrawBtn.addEventListener('click', () => {
-    photoeditor.classList.remove('active');
-    excalidraw.classList.add('active');
-    backToNotesBtn.classList.add('active');
-    fabAddBtn.classList.add('hide');
+    openDrawView(true);
+    if (activeItemType === 'draw') renderItemsList();
 });
 openPhotoeditorBtn.addEventListener('click', () => {
+    lastPrimaryView = { type: activeItemType, itemId: activeItemId };
     excalidraw.classList.remove('active');
     photoeditor.classList.add('active');
     backToNotesBtn.classList.add('active');
@@ -2007,6 +2156,35 @@ backToNotesBtn.addEventListener('click', () => {
     photoeditor.classList.remove('active');
     backToNotesBtn.classList.remove('active');
     fabAddBtn.classList.remove('hide');
+
+    // Restore last primary view (type + item) if available; fallback to notes when unknown/draw
+    let restoreType = lastPrimaryView?.type;
+    const restoreItemId = lastPrimaryView?.itemId;
+    if (!restoreType || restoreType === 'draw') {
+        restoreType = 'note';
+    }
+
+    activeItemType = restoreType;
+    resourceTabs.forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.type === activeItemType);
+    });
+    saveWorkspaces();
+    renderItemsList();
+
+    const proj = getCurrentProject();
+    if (proj) {
+        let targetId = null;
+        if (restoreItemId) {
+            const found = proj.items.find(i => i.id === restoreItemId && i.type === activeItemType);
+            if (found) targetId = found.id;
+        }
+        if (!targetId) {
+            const firstOfType = proj.items.find(i => i.type === activeItemType);
+            if (firstOfType) targetId = firstOfType.id;
+        }
+        if (targetId) setActiveItem(targetId);
+        else createNewItem();
+    }
 });
 
 shareBtn.addEventListener('click', shareCurrentItem);
@@ -2285,6 +2463,7 @@ async function loadAISettings() {
             aiSettings.providers = {
                 openai: true,
                 gemini: true,
+                webai: true,
                 anthropic: true,
                 xai: true,
                 deepseek: true,
@@ -2294,12 +2473,27 @@ async function loadAISettings() {
                 nvidia: false,
                 alibaba: false
             };
+        } else {
+            aiSettings.providers = {
+                openai: aiSettings.providers.openai ?? true,
+                gemini: aiSettings.providers.gemini ?? true,
+                webai: aiSettings.providers.webai ?? true,
+                anthropic: aiSettings.providers.anthropic ?? true,
+                xai: aiSettings.providers.xai ?? true,
+                deepseek: aiSettings.providers.deepseek ?? true,
+                mistral: aiSettings.providers.mistral ?? true,
+                cohere: aiSettings.providers.cohere ?? false,
+                huggingface: aiSettings.providers.huggingface ?? false,
+                nvidia: aiSettings.providers.nvidia ?? false,
+                alibaba: aiSettings.providers.alibaba ?? false
+            };
         }
     }
 
     // Populate Settings UI
     if (enableOpenAI) enableOpenAI.checked = aiSettings.providers.openai;
     if (enableGemini) enableGemini.checked = aiSettings.providers.gemini;
+    if (enableWebAI) enableWebAI.checked = aiSettings.providers.webai;
     if (enableAnthropic) enableAnthropic.checked = aiSettings.providers.anthropic;
     if (enableXAI) enableXAI.checked = aiSettings.providers.xai;
     if (enableDeepSeek) enableDeepSeek.checked = aiSettings.providers.deepseek;
@@ -2312,6 +2506,7 @@ async function loadAISettings() {
     // Toggle Key Containers
     toggleKeyContainer(openaiKeyContainer, aiSettings.providers.openai);
     toggleKeyContainer(geminiKeyContainer, aiSettings.providers.gemini);
+    toggleKeyContainer(webaiKeyContainer, aiSettings.providers.webai);
     toggleKeyContainer(anthropicKeyContainer, aiSettings.providers.anthropic);
     toggleKeyContainer(xaiKeyContainer, aiSettings.providers.xai);
     toggleKeyContainer(deepseekKeyContainer, aiSettings.providers.deepseek);
@@ -2488,6 +2683,10 @@ function updateModelDropdown() {
     }
 }
 
+function isWebAIModel(modelId) {
+    return typeof modelId === 'string' && modelId.startsWith('chrome-');
+}
+
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
     loadAISettings();
@@ -2504,6 +2703,7 @@ const setupProviderToggle = (checkbox, container) => {
 
 setupProviderToggle(enableOpenAI, openaiKeyContainer);
 setupProviderToggle(enableGemini, geminiKeyContainer);
+setupProviderToggle(enableWebAI, webaiKeyContainer);
 setupProviderToggle(enableAnthropic, anthropicKeyContainer);
 setupProviderToggle(enableXAI, xaiKeyContainer);
 setupProviderToggle(enableDeepSeek, deepseekKeyContainer);
@@ -2525,6 +2725,7 @@ if (saveSettingsBtn) {
     saveSettingsBtn.addEventListener('click', async () => {
         aiSettings.providers.openai = enableOpenAI ? enableOpenAI.checked : false;
         aiSettings.providers.gemini = enableGemini ? enableGemini.checked : false;
+        aiSettings.providers.webai = enableWebAI ? enableWebAI.checked : false;
         aiSettings.providers.anthropic = enableAnthropic ? enableAnthropic.checked : false;
         aiSettings.providers.xai = enableXAI ? enableXAI.checked : false;
         aiSettings.providers.deepseek = enableDeepSeek ? enableDeepSeek.checked : false;
@@ -2573,6 +2774,12 @@ if (aiModelSelect) {
     aiModelSelect.addEventListener('change', () => {
         aiSettings.lastModel = aiModelSelect.value;
         chrome.storage.local.set({ aiSettings });
+        if (isWebAIModel(aiSettings.lastModel)) {
+            webAIIntentActive = true;
+            refreshWebAIStatus(false);
+        } else {
+            hideWebAIStatus();
+        }
     });
 }
 
@@ -2777,6 +2984,8 @@ if (aiGenerateBtn) {
         } else if (model.startsWith('gemini') || model.startsWith('gemma') || model.startsWith('alphafold')) {
             provider = 'gemini';
             apiKey = aiSettings.geminiKey;
+        } else if (model.startsWith('chrome-')) {
+            provider = 'webai';
         } else if (model.startsWith('claude')) {
             provider = 'anthropic';
             apiKey = aiSettings.anthropicKey;
@@ -2811,9 +3020,14 @@ if (aiGenerateBtn) {
             return;
         }
 
-        if (!apiKey) {
+        if (provider !== 'webai' && !apiKey) {
             showAIError(`API Key for ${provider} is missing. Please configure it in Settings.`);
             return;
+        }
+
+        if (provider === 'webai') {
+            const ok = await ensureWebAIReadyForUse(true);
+            if (!ok) return;
         }
         if (!prompt) {
             showAIError('Please enter a prompt');
@@ -2825,7 +3039,9 @@ if (aiGenerateBtn) {
         chrome.storage.local.set({ aiSettings });
 
         // UI State
+        aiAbortController = new AbortController();
         aiLoading.classList.remove('hidden');
+        if (aiStopBtn) aiStopBtn.classList.remove('hidden');
         aiError.classList.add('hidden');
         aiPreviewSection.classList.add('hidden');
         aiGenerateBtn.disabled = true;
@@ -2934,8 +3150,13 @@ if (aiGenerateBtn) {
                     },
                     // onError
                     (error) => {
-                        showAIError(error.message || 'Streaming failed');
-                    }
+                        if (error?.name === 'AbortError') {
+                            showNotification('Generation stopped', 'info');
+                        } else {
+                            showAIError(error.message || 'Streaming failed');
+                        }
+                    },
+                    { signal: aiAbortController.signal }
                 );
             } else {
                 // Todo and Both modes use regular call for JSON parsing
@@ -2947,7 +3168,7 @@ if (aiGenerateBtn) {
                 }
 
                 const systemInstruction = baseInstruction + formatInstruction;
-                const result = await callAIProvider(provider, apiKey, model, prompt, systemInstruction);
+                const result = await callAIProvider(provider, apiKey, model, prompt, systemInstruction, { signal: aiAbortController.signal });
 
                 let title = '';
                 let content = result;
@@ -2999,9 +3220,15 @@ if (aiGenerateBtn) {
                 }
             }
         } catch (error) {
-            showAIError(error.message);
+            if (error?.name === 'AbortError') {
+                showNotification('Generation stopped', 'info');
+            } else {
+                showAIError(error.message);
+            }
         } finally {
+            if (aiAbortController) aiAbortController = null;
             aiLoading.classList.add('hidden');
+            if (aiStopBtn) aiStopBtn.classList.add('hidden');
             aiGenerateBtn.disabled = false;
             // aiGenerateBtn.innerHTML = '<span class="material-icons">arrow_upward</span>'; // Restore icon
         }
@@ -3487,6 +3714,317 @@ if (insertMediaBtn) {
 
 // --- Chat Mode Logic ---
 
+function setWebAIProgress(percent) {
+    if (!webaiProgress || !webaiProgressLabel) return;
+
+    if (percent === null || percent === undefined) {
+        webaiProgress.hidden = true;
+        webaiProgressLabel.classList.add('hidden');
+        return;
+    }
+
+    const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+    webaiProgress.hidden = false;
+    webaiProgress.value = clamped / 100;
+    webaiProgressLabel.textContent = `${clamped}%`;
+    webaiProgressLabel.classList.remove('hidden');
+}
+
+function setWebAIDownloading(isDownloading) {
+    if (webaiCancelBtn) webaiCancelBtn.classList.toggle('hidden', !isDownloading);
+    if (webaiCancelBtnModal) webaiCancelBtnModal.classList.toggle('hidden', !isDownloading);
+}
+
+function hideWebAIStatus() {
+    if (webaiStatus) webaiStatus.classList.add('hidden');
+    setWebAIProgress(null);
+    setWebAIDownloading(false);
+}
+
+async function getLanguageModelAvailability() {
+    try {
+        if (typeof LanguageModel !== 'undefined') {
+            return await LanguageModel.availability();
+        }
+        if (window.ai && window.ai.languageModel && window.ai.languageModel.availability) {
+            const result = await window.ai.languageModel.availability({ languages: ['en'] });
+            return result?.state || result;
+        }
+    } catch (e) {
+        console.warn('WebAI availability check failed:', e);
+    }
+    return 'unavailable';
+}
+
+async function startWebAIDownload() {
+    if (!navigator.userActivation?.isActive) {
+        showNotification('Click or press a key first to allow Web AI download (user activation required).', 'error');
+        return false;
+    }
+
+    try {
+        setWebAIProgress(0);
+        webaiDownloadCanceled = false;
+        setWebAIDownloading(true);
+
+        if (typeof LanguageModel === 'undefined') {
+            throw new Error('LanguageModel is not supported in this browser.');
+        }
+
+        if (webaiDownloadSession && webaiDownloadSession.destroy) {
+            try { webaiDownloadSession.destroy(); } catch (e) { /* ignore */ }
+        }
+
+        const session = await LanguageModel.create({
+            monitor(m) {
+                m.addEventListener('downloadprogress', (e) => {
+                    const loaded = typeof e.loaded === 'number' ? e.loaded : 0;
+                    const total = typeof e.total === 'number' ? e.total : 1;
+                    const percent = total > 0 ? (loaded / total) * 100 : loaded * 100;
+                    if (webaiDownloadCanceled) {
+                        try { session?.destroy?.(); } catch (err) { /* ignore */ }
+                        setWebAIProgress(null);
+                        return;
+                    }
+                    setWebAIProgress(percent);
+                });
+            },
+            expectedInputs: [{ type: 'text', languages: ['en'] }],
+            expectedOutputs: [{ type: 'text', languages: ['en'] }]
+        });
+
+        webaiDownloadSession = session;
+
+        // End the session immediately; we only needed it to trigger download
+        try { session?.destroy?.(); } catch (e) { /* ignore */ }
+        showNotification('Web AI model downloaded. Ready to use.', 'success');
+        setWebAIProgress(null);
+        setWebAIDownloading(false);
+        return true;
+    } catch (err) {
+        console.error(err);
+        showNotification(err.message || 'Web AI download failed', 'error');
+        setWebAIProgress(null);
+        setWebAIDownloading(false);
+        return false;
+    }
+}
+
+function cancelWebAIDownload() {
+    webaiDownloadCanceled = true;
+    if (webaiDownloadSession && typeof webaiDownloadSession.destroy === 'function') {
+        try { webaiDownloadSession.destroy(); } catch (e) { /* ignore */ }
+    }
+    setWebAIProgress(null);
+    setWebAIDownloading(false);
+    showNotification('Web AI download canceled.', 'error');
+}
+
+async function refreshWebAIStatus(autoStartDownload = false) {
+    if (!webaiStatus || !webaiStatusText) return false;
+    if (!webAIIntentActive) {
+        hideWebAIStatus();
+        return false;
+    }
+
+    const availability = await getLanguageModelAvailability();
+    const modelName = 'Gemini Nano (Chrome)';
+
+    if (availability === 'available') {
+        webaiStatus.classList.add('hidden');
+        setWebAIProgress(null);
+        setWebAIDownloading(false);
+        return true;
+    }
+
+    webaiStatus.classList.remove('hidden');
+    if (availability === 'unavailable') {
+        setWebAIProgress(null);
+        setWebAIDownloading(false);
+    }
+
+    if (availability === 'unavailable') {
+        webaiStatusText.textContent = `${modelName} is unavailable. Enable Chrome built-in AI flags and restart, then try downloading.`;
+        return false;
+    }
+
+    if (availability === 'downloadable' || availability === 'downloading') {
+        webaiStatusText.textContent = `${modelName} needs to download. This runs locally and requires disk space and an unmetered connection.`;
+        setWebAIProgress(0);
+        setWebAIDownloading(false);
+        if (autoStartDownload) {
+            return await startWebAIDownload();
+        }
+        return false;
+    }
+
+    webaiStatusText.textContent = `${modelName} state: ${availability}.`;
+    setWebAIDownloading(false);
+    return false;
+}
+
+function renderWebAIModelsList(availability) {
+    if (!webaiModelsList) return;
+    const models = [
+        { id: 'chrome-gemini-nano', name: 'Gemini Nano', description: 'On-device text model (Prompt API)' },
+        { id: 'chrome-prompt-api', name: 'Prompt API', description: 'Prompt API access for local model' },
+        { id: 'chrome-summarizer', name: 'Summarizer', description: 'Summarizer API in Chrome' }
+    ];
+
+    webaiModelsList.innerHTML = models.map((m) => `
+        <div class="webai-model-card">
+            <h5>${m.name}</h5>
+            <div class="status">State: ${availability}</div>
+            <div class="status">${m.description}</div>
+        </div>
+    `).join('');
+}
+
+function renderWebAIGuides() {
+    if (!webaiGuidesList) return;
+    const guides = [
+        { label: 'Setup Chrome built-in AI', href: 'https://developer.chrome.com/docs/ai/built-in' },
+        { label: 'Enable Prompt API flag', href: 'chrome://flags/#prompt-api-for-gemini-nano' },
+        { label: 'Enable on-device model flag (copy and open)', href: 'chrome://flags/#optimization-guide-on-device-model' },
+        { label: 'Enable on-device internal flag and activate debug mode. (copy and open)', href: 'chrome://on-device-internals' },
+        { label: 'Troubleshoot install not complete', href: 'https://developer.chrome.com/docs/ai/prompt-api#troubleshooting' }
+    ];
+    webaiGuidesList.innerHTML = guides.map(g => `<li><a href="${g.href}" target="_blank" rel="noopener">${g.label}</a></li>`).join('');
+}
+
+async function ensureWebAIReadyForUse(triggerDownload = false) {
+    webAIIntentActive = true;
+    const availability = await getLanguageModelAvailability();
+    const ready = availability === 'available';
+
+    // Update status UI without blocking on full download
+    refreshWebAIStatus(false);
+
+    if (!ready) {
+        openWebAIStorageModal();
+        if (triggerDownload && (availability === 'downloadable' || availability === 'downloading')) {
+            startWebAIDownload();
+        }
+    }
+
+    return ready;
+}
+
+function openWebAIStorageModal() {
+    if (!webaiStorageModal) return;
+    webAIIntentActive = true;
+    webaiStorageModal.style.display = 'block';
+    updateWebAIStorageEstimate();
+    refreshWebAIStatus(false).then((available) => {
+        if (webaiStatusSummary) {
+            webaiStatusSummary.textContent = available ? 'Available' : 'Not ready';
+        }
+        getLanguageModelAvailability().then(state => {
+            renderWebAIModelsList(state);
+        });
+    });
+    renderWebAIGuides();
+}
+
+function closeWebAIStorageModal() {
+    if (webaiStorageModal) webaiStorageModal.style.display = 'none';
+}
+
+async function updateWebAIStorageEstimate() {
+    if (!webaiStorageEstimate || !navigator.storage?.estimate) return;
+    try {
+        const { usage, quota } = await navigator.storage.estimate();
+        if (usage && quota) {
+            const usedMb = usage / (1024 * 1024);
+            const quotaMb = quota / (1024 * 1024);
+            const pct = Math.round((usage / quota) * 100);
+            webaiStorageEstimate.textContent = `${usedMb.toFixed(1)} MB of ${quotaMb.toFixed(0)} MB (${pct}%)`;
+        } else {
+            webaiStorageEstimate.textContent = 'Unavailable';
+        }
+    } catch (err) {
+        webaiStorageEstimate.textContent = 'Unavailable';
+        console.warn('Storage estimate failed:', err);
+    }
+}
+
+async function deleteLocalWebAIModel() {
+    try {
+        if (typeof LanguageModel !== 'undefined' && typeof LanguageModel.delete === 'function') {
+            await LanguageModel.delete();
+            showNotification('Deleted local Web AI model. You can download it again later.', 'success');
+            refreshWebAIStatus(false);
+            return true;
+        }
+        if (window.ai?.languageModel?.delete) {
+            await window.ai.languageModel.delete();
+            showNotification('Deleted local Web AI model. You can download it again later.', 'success');
+            refreshWebAIStatus(false);
+            return true;
+        }
+        showNotification('Browser does not expose model delete. Clear it via Chrome settings → Site settings → Machine learning.', 'error');
+        return false;
+    } catch (err) {
+        showNotification(err.message || 'Failed to delete local model', 'error');
+        return false;
+    }
+}
+
+if (webaiDownloadBtn) {
+    webaiDownloadBtn.addEventListener('click', async () => {
+        webAIIntentActive = true;
+        await startWebAIDownload();
+    });
+}
+
+if (webaiCancelBtn) {
+    webaiCancelBtn.addEventListener('click', () => {
+        cancelWebAIDownload();
+    });
+}
+
+if (webaiDownloadBtnModal) {
+    webaiDownloadBtnModal.addEventListener('click', async () => {
+        webAIIntentActive = true;
+        await startWebAIDownload();
+    });
+}
+
+if (webaiCancelBtnModal) {
+    webaiCancelBtnModal.addEventListener('click', () => {
+        cancelWebAIDownload();
+    });
+}
+
+if (webaiManageBtn) {
+    webaiManageBtn.addEventListener('click', openWebAIStorageModal);
+}
+
+if (webaiHelpBtn) {
+    webaiHelpBtn.addEventListener('click', openWebAIStorageModal);
+}
+
+if (closeWebaiStorageBtn) {
+    closeWebaiStorageBtn.addEventListener('click', closeWebAIStorageModal);
+}
+
+if (webaiStorageModal) {
+    webaiStorageModal.addEventListener('click', (e) => {
+        if (e.target === webaiStorageModal) {
+            closeWebAIStorageModal();
+        }
+    });
+}
+
+if (webaiDeleteBtn) {
+    webaiDeleteBtn.addEventListener('click', async () => {
+        const success = await deleteLocalWebAIModel();
+        if (success) {
+            closeWebAIStorageModal();
+        }
+    });
+}
+
 // Toggle UI based on output type
 if (aiTypeSelect) {
     aiTypeSelect.addEventListener('change', () => {
@@ -3515,6 +4053,13 @@ if (aiTypeSelect) {
             // Standard modes
             aiChatContainer.classList.add('hidden');
             if (aiChatAttachBtn) aiChatAttachBtn.style.display = 'none';
+        }
+
+        if (isWebAIModel(aiModelSelect?.value)) {
+            webAIIntentActive = true;
+            refreshWebAIStatus(false);
+        } else {
+            hideWebAIStatus();
         }
     });
 }
@@ -3806,6 +4351,15 @@ function renderChatHistory() {
 
 // Send chat message
 if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
+    if (aiStopBtn) {
+        aiStopBtn.addEventListener('click', () => {
+            if (aiAbortController) {
+                aiAbortController.abort();
+            }
+            aiStopBtn.classList.add('hidden');
+        });
+    }
+
     const sendChatMessage = async (messagePayload = null) => {
         const message = messagePayload !== null ? messagePayload : (aiChatInput && !aiChatInput.closest('.hidden') ? aiChatInput.value.trim() : aiPromptInput.value.trim());
         if (!message && chatAttachedFiles.length === 0) return;
@@ -3823,6 +4377,8 @@ if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
         } else if (model.startsWith('gemini') || model.startsWith('gemma')) {
             provider = 'gemini';
             apiKey = aiSettings.geminiKey;
+        } else if (model.startsWith('chrome-')) {
+            provider = 'webai';
         } else if (model.startsWith('claude')) {
             provider = 'anthropic';
             apiKey = aiSettings.anthropicKey;
@@ -3851,9 +4407,14 @@ if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
             return;
         }
 
-        if (!apiKey) {
+        if (provider !== 'webai' && !apiKey) {
             showNotification(`API Key for ${provider} is missing`, 'error');
             return;
+        }
+
+        if (provider === 'webai') {
+            const ok = await ensureWebAIReadyForUse(true);
+            if (!ok) return;
         }
 
         // Ensure we have an active note
@@ -3936,6 +4497,9 @@ if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
         // Show streaming indicator
         isStreamingChat = true;
         aiGenerateBtn.disabled = true;
+        if (aiLoading) aiLoading.classList.remove('hidden');
+        if (aiStopBtn) aiStopBtn.classList.remove('hidden');
+        aiAbortController = new AbortController();
 
         // Add assistant header and prepare for streaming
         const startPos = quill.getLength();
@@ -4002,13 +4566,21 @@ if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
                 // onError
                 (error) => {
                     showNotification('Chat error: ' + error.message, 'error');
-                }
+                },
+                { signal: aiAbortController.signal }
             );
         } catch (error) {
-            showNotification('Chat error: ' + error.message, 'error');
+            if (error?.name === 'AbortError') {
+                showNotification('Chat stopped', 'info');
+            } else {
+                showNotification('Chat error: ' + error.message, 'error');
+            }
         } finally {
             isStreamingChat = false;
             aiGenerateBtn.disabled = false;
+            if (aiLoading) aiLoading.classList.add('hidden');
+            if (aiStopBtn) aiStopBtn.classList.add('hidden');
+            if (aiAbortController) aiAbortController = null;
         }
     };
 

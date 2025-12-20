@@ -51,6 +51,9 @@
                     <button class="tab-btn" data-type="credential" title="Credentials">
                         <span class="material-icons">password</span>
                     </button>
+                    <button class="tab-btn" data-type="draw" title="Whiteboard">
+                        <span class="material-icons">gesture</span>
+                    </button>
                 </div>
 
                 <div class="search-box">
@@ -283,6 +286,22 @@
                         </div>
                     </div>
 
+                    <!-- Google Web AI (on-device) -->
+                    <div class="provider-group">
+                        <div class="provider-header">
+                            <label for="enable-webai">Google Web AI (on-device)</label>
+                            <label class="switch">
+                                <input type="checkbox" id="enable-webai">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div id="webai-key-container" class="key-container hidden">
+                            <p class="text-muted" style="font-size: 12px; margin: 0;">
+                                Runs locally in Chrome (Gemini Nano). No API key needed; requires user activation and model download.
+                            </p>
+                        </div>
+                    </div>
+
                     <!-- Anthropic -->
                     <div class="provider-group">
                         <div class="provider-header">
@@ -498,11 +517,24 @@
                     <span class="material-icons">arrow_upward</span>
                 </button>
             </div>
+            <div id="webai-status" class="webai-status hidden">
+                <div class="webai-status-text" id="webai-status-text">Chrome Web AI requires a local model (Gemini Nano). Click download to start.</div>
+                <div class="webai-status-actions">
+                    <progress id="webai-progress" max="1" value="0" hidden></progress>
+                    <span id="webai-progress-label" class="webai-progress-label hidden">0%</span>
+                    <button id="webai-download-btn" class="btn small">Download</button>
+                    <button id="webai-cancel-btn" class="btn secondary small hidden">Cancel</button>
+                    <button id="webai-manage-btn" class="btn">Manage</button>
+                </div>
+            </div>
             <div class="ai-prompt-container">
                 <div id="ai-chat-attachments" class="ai-chat-attachments hidden"></div>
                 <textarea id="ai-prompt" class="ai-prompt-input"
                     placeholder="Ask AI to write something... (Type / for snippets)" rows="3"></textarea>
                 <div id="ai-snippets-menu" class="snippets-menu hidden"></div>
+                <button id="webai-help-btn" class="ai-help-btn" title="Web AI guides">
+                    <span class="material-icons">help_outline</span>
+                </button>
             </div>
 
             <!-- Chat Mode UI -->
@@ -530,8 +562,9 @@
             </div>
 
             <div id="ai-loading" class="hidden"
-                style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-muted);">
-                <span class="material-icons spin" style="font-size: 14px;">refresh</span> Generating...
+                style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <span class="material-icons spin" style="font-size: 14px;">refresh</span> <span>Processing...</span>
+                <button id="ai-stop-btn" class="btn secondary small hidden" style="padding: 2px 8px; font-size: 11px;">Stop</button>
             </div>
 
             <div id="ai-error" class="error-message hidden"
@@ -636,6 +669,52 @@
                     <button id="generate-media-btn" class="btn primary large">
                         <span class="material-icons">auto_awesome</span> Generate
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- WebAI Models & Guides Modal -->
+    <div id="webai-storage-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Web AI Models & Guides</h3>
+                <button id="close-webai-storage-btn" class="icon-btn">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Manage on-device Chrome Web AI (Gemini Nano) models, space usage, and setup guides.</p>
+
+                <div class="webai-summary">
+                    <div class="webai-summary-row">
+                        <span>Status:</span>
+                        <strong id="webai-status-summary">--</strong>
+                    </div>
+                    <div class="webai-summary-row">
+                        <span>Storage:</span>
+                        <strong class="storage-estimate">Site usage: <span id="webai-storage-estimate">--</span></strong>
+                    </div>
+                </div>
+
+                <div class="webai-actions">
+                    <button id="webai-download-btn-modal" class="btn primary">Download / Update</button>
+                    <button id="webai-cancel-btn-modal" class="btn secondary hidden">Cancel Download</button>
+                    <button id="webai-delete-btn" class="btn danger">Delete Local Model</button>
+                </div>
+
+                <div class="webai-models">
+                    <h4>Models</h4>
+                    <div id="webai-models-list" class="webai-models-list"></div>
+                </div>
+
+                <div class="webai-guides">
+                    <h4>Guides</h4>
+                    <ul id="webai-guides-list" class="webai-guides-list"></ul>
+                </div>
+
+                <div class="storage-help">
+                    <p><strong>Manual cleanup:</strong> If delete is unavailable, open Chrome settings → Privacy and security → Site settings → Additional permissions → Machine learning to clear on-device models.</p>
                 </div>
             </div>
         </div>
