@@ -7,6 +7,13 @@ The extension is **100% free and open source**, built with transparency and comm
 
 ---
 
+## 🌐 Chrome Extension
+
+👉 **Install from Chrome Web Store**  
+https://chromewebstore.google.com/detail/dev-notebook/omgcdhgddpdaieccfjioidhbglebpope
+
+---
+
 ## ✨ Features
 
 ### 📝 Smart Note Taking
@@ -73,9 +80,8 @@ The extension is **100% free and open source**, built with transparency and comm
 ## 🧩 Installation
 
 ### Chrome Web Store
-1. Open Chrome Extensions page
-2. Search for **Dev Notebook**
-3. Click **Add to Chrome**
+Install directly from the Chrome Web Store:  
+https://chromewebstore.google.com/detail/dev-notebook/omgcdhgddpdaieccfjioidhbglebpope
 
 ### Manual Installation (Developer Mode)
 1. Clone the repository
@@ -108,7 +114,7 @@ Dev Notebook is privacy by design.
 - No ads
 - No external servers for core features
 
-All data stays on your device. AI features are optional and user controlled.
+All data stays on your device. AI features are optional and fully user controlled.
 
 ---
 
