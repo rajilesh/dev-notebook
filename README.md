@@ -1,71 +1,146 @@
-# Dev Notebook 🧠📒  
-**Free • Open Source • Offline-First Chrome Extension**
+# Dev Notebook
+**Free & Open Source Chrome Extension**
 
-Dev Notebook is a lightweight, developer-focused workspace that lives in your browser. It helps you capture ideas, code snippets, research notes, and tasks instantly without breaking your flow.
+Dev Notebook is a lightweight, offline-first productivity workspace built for developers, product managers, designers, and researchers. It transforms your browser into a fast, private, and powerful workspace for notes, code, diagrams, drawings, images, todos, and AI assisted productivity.
 
-Built for developers, product builders, and researchers who value speed, privacy, and simplicity.
+The extension is **100% free and open source**, built with transparency and community driven development.
 
 ---
 
-## 🚀 Features
+## ✨ Features
 
 ### 📝 Smart Note Taking
-- Rich Markdown editor
+- Rich text editor with **Markdown support**
 - Syntax highlighting for code blocks
-- Inline formatting, headings, lists, tables
-- Ideal for code snippets, logs, and ideas
+- Auto formatting for developer friendly snippets
+- Fast inline editing with keyboard focused workflows
 
-### 💾 Offline-First by Design
-- Works fully offline
-- Notes stored locally in your browser
-- Zero tracking, zero analytics
+### 🤖 AI for Notes & Todos
+- AI powered **note summarization**
+- Convert notes into **actionable todos**
+- Auto improve and rewrite notes for clarity
+- Generate task lists from meeting notes or ideas
+- Optional and privacy conscious AI usage
 
-### 🧠 Organized Workspace
-- Multiple notebooks
-- Fast search across notes
-- Clean and distraction-free UI
+### ✅ Todo Management
+- Built-in **todo lists** inside notes
+- Create, edit, complete, and organize tasks
+- Group todos by topic or note
+- Ideal for daily dev tasks and project tracking
 
-### 🔐 Privacy Focused
-- No cloud sync
-- No account required
-- Your data never leaves your device
+### 🧩 Diagrams & Drawings
+- Built-in **diagram creator** for flowcharts, system design, and architecture diagrams
+- Freehand **drawing canvas** for quick sketches and brainstorming
+- Shapes, arrows, connectors, text, and layers
+- Ideal for explaining logic, workflows, and technical flows
 
-### ⚡ Developer Friendly
-- Open source and hackable
-- Clean codebase
-- Easy to extend with new features
+### 🖼 Photo Editing & Cropping
+- Upload images directly into notes
+- **Crop, resize, rotate, and zoom images**
+- Quick screenshot edits for documentation
+- Reset and non-destructive edits
+
+### 🔒 Offline First
+- Works completely **offline**
+- Notes, drawings, diagrams, images, and todos are stored locally
+- No internet dependency for core features
+
+### 🧠 Personal Knowledge Base
+- Organize notes using tags and topics
+- Instant search across notes, code, and todos
+- Perfect for APIs, bugs, todos, meeting notes, and research
+
+### 🌐 Open Source
+- Fully open source with public GitHub repository
+- Community contributions welcome
+- Transparent and auditable codebase
 
 ---
 
-## 🧩 Use Cases
+## 🚀 Use Cases
 
-- Daily developer notes
-- Debug logs and scratchpads
-- API references
-- Meeting notes
-- Research and learning notes
-- Chrome sidebar workspace
-
----
-
-## 🛠️ Tech Stack
-
-- JavaScript
-- HTML5
-- CSS3
-- Chrome Extension APIs
-- Local Storage / IndexedDB
+- Take development and debugging notes
+- Create and manage daily todos
+- Generate tasks automatically using AI
+- Create system design and architecture diagrams
+- Sketch ideas and workflows quickly
+- Edit and crop screenshots for documentation
+- Store reusable code snippets
+- Maintain a private developer knowledge base
 
 ---
 
-## 📦 Installation
+## 🧩 Installation
 
-### From Chrome Web Store
-1. Open Chrome Web Store
+### Chrome Web Store
+1. Open Chrome Extensions page
 2. Search for **Dev Notebook**
 3. Click **Add to Chrome**
 
-### Manual Installation (Development)
+### Manual Installation (Developer Mode)
 1. Clone the repository
-   ```bash
-   git clone https://github.com/rajilesh/dev-notebook.git
+2. Open `chrome://extensions`
+3. Enable **Developer mode**
+4. Click **Load unpacked**
+5. Select the project directory
+
+---
+
+## 🛠 Tech Stack
+
+- JavaScript
+- HTML
+- CSS
+- Canvas API
+- Chrome Extension APIs
+- Local Storage / IndexedDB
+- Optional AI integration layer
+
+---
+
+## 🔐 Privacy
+
+Dev Notebook is privacy by design.
+
+- No mandatory accounts
+- No tracking
+- No analytics
+- No ads
+- No external servers for core features
+
+All data stays on your device. AI features are optional and user controlled.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome.
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Submit a pull request
+
+Bug fixes, features, AI improvements, and documentation updates are encouraged.
+
+---
+
+## 📄 License
+
+Licensed under the **MIT License**.  
+Free to use, modify, and distribute.
+
+---
+
+## ⭐ Support
+
+If Dev Notebook helps you:
+- Star the repository on GitHub
+- Share it with other developers
+- Contribute ideas or code
+
+---
+
+**Dev Notebook**  
+Notes. Todos. AI. Code. Diagrams. Drawings. Images.  
+Private. Offline. Open Source.
