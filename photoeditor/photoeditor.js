@@ -568,16 +568,41 @@
     // --- Fabric + Tool Rail ---
     function syncOverlaySize() {
         if (!canvas || !fabricOverlay) return;
-        fabricOverlay.width = canvas.width;
-        fabricOverlay.height = canvas.height;
-        fabricOverlay.style.width = `${canvas.width}px`;
-        fabricOverlay.style.height = `${canvas.height}px`;
+
+        // Keep DOM sizing in lockstep with the drawing buffer so the canvas + overlay stay centered.
+        const width = canvas.width || canvas.getBoundingClientRect().width;
+        const height = canvas.height || canvas.getBoundingClientRect().height;
+
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+
+        if (canvasWrapper) {
+            canvasWrapper.style.width = `${width}px`;
+            canvasWrapper.style.height = `${height}px`;
+        }
+
+        fabricOverlay.width = width;
+        fabricOverlay.height = height;
+        fabricOverlay.style.width = `${width}px`;
+        fabricOverlay.style.height = `${height}px`;
+
         if (fabricCanvas) {
-            fabricCanvas.setWidth(canvas.width);
-            fabricCanvas.setHeight(canvas.height);
+            fabricCanvas.setWidth(width);
+            fabricCanvas.setHeight(height);
             fabricCanvas.calcOffset();
             fabricCanvas.requestRenderAll();
         }
+
+        centerCanvasInView();
+    }
+
+    function centerCanvasInView() {
+        if (!canvasWrapper || !canvasWrapper.parentElement) return;
+        const container = canvasWrapper.parentElement;
+        const offsetX = Math.max(0, (canvasWrapper.offsetWidth - container.clientWidth) / 2);
+        const offsetY = Math.max(0, (canvasWrapper.offsetHeight - container.clientHeight) / 2);
+        container.scrollLeft = offsetX;
+        container.scrollTop = offsetY;
     }
 
     function initFabricCanvas() {
