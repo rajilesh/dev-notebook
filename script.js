@@ -16,13 +16,15 @@ const deleteBtn = document.getElementById('delete-note-btn');
 const statusEl = document.getElementById('save-status');
 const openDrawBtn = document.getElementById('open-draw-btn');
 const openPhotoeditorBtn = document.getElementById('open-photoeditor-btn');
-const backToNotesBtn = document.getElementById('back-to-notes-btn');
+const backToAppBtn = document.getElementById('back-to-app-btn');
 const shareBtn = document.getElementById('share-btn');
 const exportSingleBtn = document.getElementById('export-single-btn');
 const exportAllBtn = document.getElementById('export-all-btn');
 const importBtn = document.getElementById('import-btn');
 const importInput = document.getElementById('import-input');
 const fabAddBtn = document.getElementById('fab-add-note');
+const aiToggleBtn = document.getElementById('ai-toggle-btn');
+const fabAIBtn = document.getElementById('fab-ai-btn');
 
 // Quill Editor Instance
 let quill = null;
@@ -92,6 +94,28 @@ const webaiGuidesList = document.getElementById('webai-guides-list');
 const webaiDownloadBtnModal = document.getElementById('webai-download-btn-modal');
 const webaiCancelBtnModal = document.getElementById('webai-cancel-btn-modal');
 let webAIIntentActive = false;
+let aiDockActive = false;
+let aiInitialized = false;
+
+// Keep AI dock hidden until explicitly opened to avoid eager loading
+if (aiDock) {
+    aiDock.style.display = 'none';
+}
+
+function setAIDockVisibility(visible, { persist = true } = {}) {
+    if (!aiDock) return;
+    aiDock.style.display = visible ? 'block' : 'none';
+    aiDockActive = visible;
+    if (aiToggleBtn) aiToggleBtn.classList.toggle('active', visible);
+    if (visible) ensureAIInitialized();
+    if (persist) chrome.storage.local.set({ aiDockVisible: visible });
+}
+
+async function ensureAIInitialized() {
+    if (aiInitialized) return;
+    aiInitialized = true;
+    await loadAISettings();
+}
 
 // Media Generation Elements
 const mediaGenerationModal = document.getElementById('media-generation-modal');
@@ -883,13 +907,9 @@ async function init() {
 
     // Restore AI dock visibility state
     if (data.aiDockVisible !== undefined && aiDock) {
-        if (data.aiDockVisible) {
-            aiDock.style.display = 'block';
-            if (aiToggleBtn) aiToggleBtn.classList.add('active');
-        } else {
-            aiDock.style.display = 'none';
-            if (aiToggleBtn) aiToggleBtn.classList.remove('active');
-        }
+        setAIDockVisibility(data.aiDockVisible, { persist: false });
+    } else if (aiDock) {
+        setAIDockVisibility(false, { persist: false });
     }
 
     // Restore chat history
@@ -2037,7 +2057,7 @@ function openDrawView(forceRefresh = true, targetUrl = null) {
         
     excalidraw.setAttribute('src', link);
     excalidraw.classList.add('active');
-    backToNotesBtn.classList.add('active');
+    backToAppBtn.classList.add('active');
     fabAddBtn.classList.add('hide');
     }, 100);
     return link;
@@ -2050,19 +2070,15 @@ toggleSidebarBtn.addEventListener('click', () => {
 });
 
 // AI Toggle Button
-const aiToggleBtn = document.getElementById('ai-toggle-btn');
 if (aiToggleBtn && aiDock) {
     aiToggleBtn.addEventListener('click', () => {
-        const isVisible = aiDock.style.display !== 'none' && aiDock.style.display !== '';
-        if (!isVisible) {
-            aiDock.style.display = 'block';
-            aiToggleBtn.classList.add('active');
-            chrome.storage.local.set({ aiDockVisible: true });
-        } else {
-            aiDock.style.display = 'none';
-            aiToggleBtn.classList.remove('active');
-            chrome.storage.local.set({ aiDockVisible: false });
-        }
+        setAIDockVisibility(!aiDockActive);
+    });
+}
+
+if (fabAIBtn && aiDock) {
+    fabAIBtn.addEventListener('click', () => {
+        setAIDockVisibility(!aiDockActive);
     });
 }
 
@@ -2148,21 +2164,18 @@ openPhotoeditorBtn.addEventListener('click', () => {
     lastPrimaryView = { type: activeItemType, itemId: activeItemId };
     excalidraw.classList.remove('active');
     photoeditor.classList.add('active');
-    backToNotesBtn.classList.add('active');
+    backToAppBtn.classList.add('active');
     fabAddBtn.classList.add('hide');
 });
-backToNotesBtn.addEventListener('click', () => {
+backToAppBtn.addEventListener('click', () => {
     excalidraw.classList.remove('active');
     photoeditor.classList.remove('active');
-    backToNotesBtn.classList.remove('active');
+    backToAppBtn.classList.remove('active');
     fabAddBtn.classList.remove('hide');
 
-    // Restore last primary view (type + item) if available; fallback to notes when unknown/draw
-    let restoreType = lastPrimaryView?.type;
+    // Restore last primary view (type + item) if available; fallback to current type, then notes
+    let restoreType = lastPrimaryView?.type || activeItemType || 'note';
     const restoreItemId = lastPrimaryView?.itemId;
-    if (!restoreType || restoreType === 'draw') {
-        restoreType = 'note';
-    }
 
     activeItemType = restoreType;
     resourceTabs.forEach(tab => {
@@ -2182,7 +2195,7 @@ backToNotesBtn.addEventListener('click', () => {
             const firstOfType = proj.items.find(i => i.type === activeItemType);
             if (firstOfType) targetId = firstOfType.id;
         }
-        if (targetId) setActiveItem(targetId);
+        if (targetId) setActiveItem(targetId, { openDraw: false });
         else createNewItem();
     }
 });
@@ -2664,9 +2677,13 @@ function updateModelDropdown() {
         option.textContent = 'No providers enabled';
         option.disabled = true;
         aiModelSelect.appendChild(option);
-        aiDock.style.display = 'none'; // Hide dock if nothing enabled
+        if (aiDock) aiDock.style.display = 'none'; // Hide dock if nothing enabled
+        aiDockActive = false;
+        if (aiToggleBtn) aiToggleBtn.classList.remove('active');
     } else {
-        aiDock.style.display = 'block';
+        if (aiDockActive && aiDock) {
+            aiDock.style.display = 'block';
+        }
         // Restore last used model if it exists in the new list
         if (aiSettings.lastModel) {
             // Check if the last model is still valid (provider enabled)
@@ -2686,11 +2703,6 @@ function updateModelDropdown() {
 function isWebAIModel(modelId) {
     return typeof modelId === 'string' && modelId.startsWith('chrome-');
 }
-
-// Event Listeners
-document.addEventListener('DOMContentLoaded', () => {
-    loadAISettings();
-});
 
 // Provider Toggles
 const setupProviderToggle = (checkbox, container) => {
@@ -3742,6 +3754,9 @@ function hideWebAIStatus() {
 }
 
 async function getLanguageModelAvailability() {
+    if (!aiDockActive && !webAIIntentActive) {
+        return 'unavailable';
+    }
     try {
         if (typeof LanguageModel !== 'undefined') {
             return await LanguageModel.availability();
@@ -3822,7 +3837,7 @@ function cancelWebAIDownload() {
 
 async function refreshWebAIStatus(autoStartDownload = false) {
     if (!webaiStatus || !webaiStatusText) return false;
-    if (!webAIIntentActive) {
+    if (!aiDockActive && !webAIIntentActive) {
         hideWebAIStatus();
         return false;
     }
@@ -3893,6 +3908,9 @@ function renderWebAIGuides() {
 }
 
 async function ensureWebAIReadyForUse(triggerDownload = false) {
+    if (!aiDockActive) {
+        return false;
+    }
     webAIIntentActive = true;
     const availability = await getLanguageModelAvailability();
     const ready = availability === 'available';
