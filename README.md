@@ -82,6 +82,8 @@ https://chromewebstore.google.com/detail/dev-notebook/omgcdhgddpdaieccfjioidhbgl
 ### Chrome Web Store
 Install directly from the Chrome Web Store:  
 https://chromewebstore.google.com/detail/dev-notebook/omgcdhgddpdaieccfjioidhbglebpope
+or 
+https://github.com/rajilesh/dev-notebook
 
 ### Manual Installation (Developer Mode)
 1. Clone the repository
