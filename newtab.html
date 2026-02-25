@@ -10,9 +10,21 @@
     <!-- Syntax Highlighting -->
     <link rel="stylesheet" href="css/vs2015.min.css">
     <link rel="stylesheet" href="styles.css">
+    <!-- SQLite WASM -->
+    <script src="js/sql-wasm.js"></script>
+    <script src="js/db.js"></script>
 </head>
 
 <body>
+    <script>
+        // Apply theme instantly from localStorage to prevent flash (default: light)
+        try {
+            const t = localStorage.getItem('devnotebook-theme');
+            if (t !== 'dark') document.body.classList.add('light-mode');
+        } catch(e) {
+            document.body.classList.add('light-mode');
+        }
+    </script>
     <div class="app-container">
         <aside class="sidebar">
             <div class="sidebar-header-composed">

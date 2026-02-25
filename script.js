@@ -102,13 +102,36 @@ if (aiDock) {
     aiDock.style.display = 'none';
 }
 
+function resetAIDockPosition() {
+    if (!aiDock) return;
+    aiDock.style.left = '';
+    aiDock.style.top = '';
+    aiDock.style.bottom = '';
+    aiDock.style.transform = '';
+    localStorage.removeItem('aiDockPosition');
+}
+
+function ensureAIDockInViewport() {
+    if (!aiDock) return;
+    const rect = aiDock.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // If more than half the dock is off-screen, reset to default position
+    if (rect.right < 50 || rect.left > vw - 50 || rect.bottom < 0 || rect.top > vh - 20) {
+        resetAIDockPosition();
+    }
+}
+
 function setAIDockVisibility(visible, { persist = true } = {}) {
     if (!aiDock) return;
     aiDock.style.display = visible ? 'block' : 'none';
     aiDockActive = visible;
     if (aiToggleBtn) aiToggleBtn.classList.toggle('active', visible);
-    if (visible) ensureAIInitialized();
-    if (persist) chrome.storage.local.set({ aiDockVisible: visible });
+    if (visible) {
+        ensureAIDockInViewport();
+        ensureAIInitialized();
+    }
+    if (persist) DevNotebookDB.setSetting('aiDockVisible', visible);
 }
 
 async function ensureAIInitialized() {
@@ -401,7 +424,6 @@ let drawCollabLinkUrl = '';
 
 
 // --- State ---
-let workspaces = [];
 let activeWorkspaceId = null;
 let activeProjectId = null;
 let activeItemType = 'note'; // 'note', 'bookmark', 'credential'
@@ -413,21 +435,33 @@ let lastPrimaryView = { type: 'note', itemId: null };
 // Legacy state for migration reference (will be removed/unused after migration)
 
 let todos = [];
-let currentTheme = 'system'; // 'light', 'dark', 'system'
+let currentTheme = 'light'; // 'light', 'dark'
 let currentTodoPage = 1;
 const todosPerPage = 15;
 
 // --- Initialization ---
-// Wait for both DOM, Quill, and highlight.js to load
+// Wait for DOM, Quill, highlight.js, and SQLite DB to load
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM loaded, checking for Quill and highlight.js...');
+    console.log('DOM loaded, initializing DB and checking libraries...');
+
+    // Start DB init immediately (parallel with library check)
+    const dbReady = DevNotebookDB.init().then(() => {
+        console.log('SQLite DB ready');
+        return DevNotebookDB.migrateFromChromeStorage();
+    }).then(migrated => {
+        if (migrated) console.log('Data migrated from chrome.storage.local to SQLite');
+    });
 
     const checkLibraries = setInterval(() => {
         if (typeof Quill !== 'undefined' && typeof hljs !== 'undefined') {
             clearInterval(checkLibraries);
             console.log('All libraries loaded!');
             initializeQuill();
-            init();
+            // Wait for DB before init
+            dbReady.then(() => init()).catch(e => {
+                console.error('DB init failed, falling back:', e);
+                init();
+            });
         }
     }, 100);
 });
@@ -539,10 +573,11 @@ function initializeQuill() {
             if (activeItemId) {
                 const item = getItem(activeItemId);
                 if (item && item.type === 'note') {
-                    item.title = noteTitleEl.value; // Sync title too if needed or handle separately
-                    item.body = quill.getContents();
-                    saveWorkspaces();
-                    // Optional: Update list item preview if needed, but debounced
+                    DevNotebookDB.updateItem(activeItemId, {
+                        title: noteTitleEl.value,
+                        body: quill.getContents()
+                    });
+                    notifySyncPeers();
                 }
             }
         }, 500);
@@ -550,14 +585,9 @@ function initializeQuill() {
 
     // Note Title Listener
     noteTitleEl.addEventListener('input', () => {
-        const item = getItem(activeItemId);
-        if (item) {
-            item.title = noteTitleEl.value;
-            // Update list item immediately for better UX
+        if (activeItemId) {
+            DevNotebookDB.updateItem(activeItemId, { title: noteTitleEl.value });
             renderItemsList();
-            // Debounce save
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(saveWorkspaces, 500);
         }
     });
 
@@ -841,81 +871,81 @@ function handleMarkdownShortcuts(quill, text, lineStart, offset) {
 }
 
 async function init() {
-    const data = await chrome.storage.local.get(['workspaces', 'notes', 'todos', 'theme', 'activeWorkspaceId', 'activeProjectId', 'activeItemType', 'aiDockVisible', 'chatHistory']);
+    // Load settings from SQLite
+    const settings = DevNotebookDB.getSettings(['theme', 'activeWorkspaceId', 'activeProjectId', 'activeItemType', 'aiDockVisible']);
 
     // Theme
-    currentTheme = data.theme || 'system';
+    currentTheme = settings.theme || 'light';
     applyTheme(currentTheme);
+    try { localStorage.setItem('devnotebook-theme', currentTheme); } catch(e) {}
 
-    // Todos (kept global for now, separate from projects as per user request flow usually)
-    todos = data.todos || [];
+    // Todos from SQLite
+    todos = DevNotebookDB.getTodos().map(t => ({
+        id: t.id, text: t.text,
+        completed: !!t.completed,
+        createdAt: t.created_at,
+        completedAt: t.completed_at
+    }));
     renderTodoList();
 
-    // Data Migration & Initialization
-    if (!data.workspaces || data.workspaces.length === 0) {
-        // Migration: Create default workspace with existing notes
-        const existingNotes = data.notes || [];
+    // Load workspaces from SQLite
+    const allWs = DevNotebookDB.getWorkspaces();
 
-        const defaultProject = {
-            id: 'proj_' + Date.now(),
-            name: 'General',
-            items: existingNotes.map(n => ({ ...n, type: 'note' })) // Ensure type is set
-        };
-
-        const defaultWorkspace = {
-            id: 'ws_' + Date.now(),
-            name: 'Personal',
-            projects: [defaultProject]
-        };
-
-        workspaces = [defaultWorkspace];
-        activeWorkspaceId = defaultWorkspace.id;
-        activeProjectId = defaultProject.id;
-
-        // Save migrated structure
-        await saveWorkspaces();
-        console.log('Migrated notes to workspaces structure.');
+    if (allWs.length === 0) {
+        // Create default workspace + project
+        const wsId = 'ws_' + Date.now();
+        const projId = 'proj_' + Date.now();
+        DevNotebookDB.createWorkspace(wsId, 'Personal');
+        DevNotebookDB.createProject(projId, wsId, 'General');
+        activeWorkspaceId = wsId;
+        activeProjectId = projId;
+        DevNotebookDB.setSettings({ activeWorkspaceId: wsId, activeProjectId: projId });
+        console.log('Created default workspace.');
     } else {
-        workspaces = data.workspaces;
-        activeWorkspaceId = data.activeWorkspaceId || workspaces[0].id;
+        activeWorkspaceId = settings.activeWorkspaceId || allWs[0].id;
 
-        // Validate active Project
-        const ws = workspaces.find(w => w.id === activeWorkspaceId);
-        if (ws && ws.projects.length > 0) {
-            activeProjectId = data.activeProjectId || ws.projects[0].id;
-        } else if (ws) {
-            // Should verify project exists or create one
-            const newProj = { id: 'proj_' + Date.now(), name: 'General', items: [] };
-            ws.projects.push(newProj);
-            activeProjectId = newProj.id;
-            saveWorkspaces();
+        // Validate workspace exists
+        const wsExists = allWs.find(w => w.id === activeWorkspaceId);
+        if (!wsExists) activeWorkspaceId = allWs[0].id;
+
+        const projects = DevNotebookDB.getProjects(activeWorkspaceId);
+        if (projects.length > 0) {
+            activeProjectId = settings.activeProjectId || projects[0].id;
+            // Validate project exists in this workspace
+            if (!projects.find(p => p.id === activeProjectId)) {
+                activeProjectId = projects[0].id;
+            }
+        } else {
+            const projId = 'proj_' + Date.now();
+            DevNotebookDB.createProject(projId, activeWorkspaceId, 'General');
+            activeProjectId = projId;
         }
     }
 
     // Restore active item type
-    if (data.activeItemType) {
-        activeItemType = data.activeItemType;
-        // Update tab buttons to reflect active type
+    if (settings.activeItemType) {
+        activeItemType = settings.activeItemType;
         resourceTabs.forEach(btn => {
-            if (btn.dataset.type === activeItemType) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
+            btn.classList.toggle('active', btn.dataset.type === activeItemType);
         });
     }
 
-    // Restore AI dock visibility state
-    if (data.aiDockVisible !== undefined && aiDock) {
-        setAIDockVisibility(data.aiDockVisible, { persist: false });
+    // Restore AI dock visibility
+    const aiVis = settings.aiDockVisible;
+    if (aiVis !== undefined && aiVis !== null && aiDock) {
+        setAIDockVisibility(aiVis, { persist: false });
     } else if (aiDock) {
         setAIDockVisibility(false, { persist: false });
     }
 
-    // Restore chat history
-    if (data.chatHistory && Array.isArray(data.chatHistory)) {
-        chatHistory = data.chatHistory;
-        // Re-render chat messages if in chat mode
+    // Restore chat history from SQLite
+    const chatRows = DevNotebookDB.getChatHistory();
+    if (chatRows.length > 0) {
+        chatHistory = chatRows.map(r => {
+            let content = r.content;
+            try { content = JSON.parse(content); } catch {}
+            return { role: r.role, content };
+        });
         renderChatHistory();
     }
 
@@ -924,24 +954,19 @@ async function init() {
     renderItemsList();
 
     // Select first item or create new
-    const currentProject = getCurrentProject();
-    if (currentProject && currentProject.items.length > 0) {
-        // Try to filter by type to find a valid item
-        const firstItem = currentProject.items.find(i => i.type === activeItemType);
-        if (firstItem) {
-            setActiveItem(firstItem.id);
-        } else {
-            createNewItem();
-        }
+    const items = DevNotebookDB.getItems(activeProjectId, activeItemType);
+    if (items.length > 0) {
+        setActiveItem(items[0].id);
     } else {
         createNewItem();
     }
 }
 
 // --- Data Persistence ---
-async function saveWorkspaces() {
-    await chrome.storage.local.set({
-        workspaces: workspaces,
+function saveWorkspaces() {
+    // With SQLite, individual operations are already persisted.
+    // This function now only saves active navigation state.
+    DevNotebookDB.setSettings({
         activeWorkspaceId: activeWorkspaceId,
         activeProjectId: activeProjectId,
         activeItemType: activeItemType
@@ -950,18 +975,43 @@ async function saveWorkspaces() {
 
 // --- Helper Accessors ---
 function getCurrentWorkspace() {
-    return workspaces.find(w => w.id === activeWorkspaceId);
+    if (!activeWorkspaceId) return null;
+    return DevNotebookDB.getWorkspace(activeWorkspaceId);
 }
 
 function getCurrentProject() {
-    const ws = getCurrentWorkspace();
-    return ws ? ws.projects.find(p => p.id === activeProjectId) : null;
+    if (!activeProjectId) return null;
+    return DevNotebookDB.getProject(activeProjectId);
 }
 
 function getItem(id) {
-    const proj = getCurrentProject();
-    if (!proj) return null;
-    return proj.items.find(i => i.id === id);
+    if (!id) return null;
+    const row = DevNotebookDB.getItem(id);
+    if (!row) return null;
+    // Convert DB row to in-memory item format expected by rest of code
+    const item = {
+        id: row.id,
+        type: row.type,
+        title: row.title,
+        created: row.created
+    };
+    if (row.type === 'note') {
+        if (row.body) {
+            try { item.body = JSON.parse(row.body); } catch { item.body = row.body; }
+        } else {
+            item.body = '';
+        }
+    } else if (row.type === 'bookmark') {
+        item.url = row.url || '';
+        item.description = row.description || '';
+    } else if (row.type === 'credential') {
+        item.username = row.username || '';
+        item.password = row.password || '';
+        item.notes = row.notes || '';
+    } else if (row.type === 'draw') {
+        item.drawUrl = row.draw_url || '';
+    }
+    return item;
 }
 
 // --- UI Rendering ---
@@ -969,7 +1019,8 @@ function getItem(id) {
 function renderSidebarControls() {
     // Render Workspace Select
     workspaceSelect.innerHTML = '';
-    workspaces.forEach(ws => {
+    const allWorkspaces = DevNotebookDB.getWorkspaces();
+    allWorkspaces.forEach(ws => {
         const option = document.createElement('option');
         option.value = ws.id;
         option.textContent = ws.name;
@@ -979,9 +1030,9 @@ function renderSidebarControls() {
 
     // Render Project Select
     projectSelect.innerHTML = '';
-    const currentWs = getCurrentWorkspace();
-    if (currentWs) {
-        currentWs.projects.forEach(proj => {
+    if (activeWorkspaceId) {
+        const projects = DevNotebookDB.getProjects(activeWorkspaceId);
+        projects.forEach(proj => {
             const option = document.createElement('option');
             option.value = proj.id;
             option.textContent = proj.name;
@@ -994,95 +1045,79 @@ function renderSidebarControls() {
 function renderItemsList() {
     itemsListEl.innerHTML = '';
 
-    const currentProject = getCurrentProject();
-    if (!currentProject) return;
+    if (!activeProjectId) return;
 
-    const filteredItems = currentProject.items.filter(item => item.type === activeItemType);
+    const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
+    let filteredItems;
+    if (searchTerm) {
+        filteredItems = DevNotebookDB.searchItems(activeProjectId, activeItemType, searchTerm);
+    } else {
+        filteredItems = DevNotebookDB.getItems(activeProjectId, activeItemType);
+    }
 
     filteredItems.forEach(item => {
         const li = document.createElement('li');
         li.className = 'note-item';
-        // Active vs Selected logic
         if (item.id === activeItemId) li.classList.add('active');
         if (selectedItemIds.has(item.id)) li.classList.add('selected');
 
-        // Search Filter
-        const searchTerm = document.getElementById('search-input').value.toLowerCase();
-        let match = true;
-
-        // Different display based on Type
         let title = item.title || 'Untitled';
         let subText = '';
 
         if (item.type === 'note') {
-            subText = item.body ? String(item.body).substring(0, 50).replace(/<[^>]*>/g, '') + '...' : 'No content';
-            // If body is delta object
-            if (item.body && typeof item.body === 'object') subText = 'Content...';
+            // Use a lightweight preview - don't load full body
+            subText = 'Content...';
         } else if (item.type === 'bookmark') {
             subText = item.url || '';
         } else if (item.type === 'credential') {
             subText = item.username || '********';
         } else if (item.type === 'draw') {
-            subText = item.drawUrl || 'Tap to open';
+            subText = item.draw_url || 'Tap to open';
         }
 
-        if (searchTerm) {
-            const searchContent = (title + subText).toLowerCase();
-            if (!searchContent.includes(searchTerm)) match = false;
-        }
+        const openLinkBtn = item.type === 'bookmark' || item.type === 'draw' ? `
+            <button class="note-item-open-link-btn" title="Open">
+                <span class="material-icons">open_in_new</span>
+            </button>
+        ` : '';
 
-        if (match) {
-            // Add open link button for bookmarks/draw
-            const openLinkBtn = item.type === 'bookmark' || item.type === 'draw' ? `
-                <button class="note-item-open-link-btn" title="Open">
-                    <span class="material-icons">open_in_new</span>
-                </button>
-            ` : '';
+        li.innerHTML = `
+            <div class="note-item-content">
+                <div class="note-item-title">${escapeHtml(title)}</div>
+                <div class="note-item-preview">${escapeHtml(subText)}</div>
+            </div>
+            ${openLinkBtn}
+            <button class="note-item-delete-btn" title="Delete">
+                <span class="material-icons">close</span>
+            </button>
+        `;
 
-            li.innerHTML = `
-                <div class="note-item-content">
-                    <div class="note-item-title">${escapeHtml(title)}</div>
-                    <div class="note-item-preview">${escapeHtml(subText)}</div>
-                </div>
-                ${openLinkBtn}
-                <button class="note-item-delete-btn" title="Delete">
-                    <span class="material-icons">close</span>
-                </button>
-            `;
+        li.addEventListener('click', (e) => {
+            handleItemClick(e, item.id, filteredItems);
+        });
 
-            // Click Handler (Selection)
-            li.addEventListener('click', (e) => {
-                // Prevent triggering if clicked on inner buttons (if any, though delete is handled separately)
-                // if (e.target.closest('button')) return; 
-
-                handleItemClick(e, item.id, filteredItems);
-            });
-
-            // Open Link Handler (for bookmarks/draw)
-            if (item.type === 'bookmark' || item.type === 'draw') {
-                const openLinkBtn = li.querySelector('.note-item-open-link-btn');
-                if (openLinkBtn) {
-                    openLinkBtn.addEventListener('click', (e) => {
-                        e.stopPropagation(); // Prevent item selection
-                        if (item.type === 'bookmark' && item.url) {
-                            window.open(item.url, '_blank');
-                        }
-                        if (item.type === 'draw') {
-                            setActiveItem(item.id, { openDraw: true });
-                        }
-                    });
-                }
+        if (item.type === 'bookmark' || item.type === 'draw') {
+            const openBtn = li.querySelector('.note-item-open-link-btn');
+            if (openBtn) {
+                openBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (item.type === 'bookmark' && item.url) {
+                        window.open(item.url, '_blank');
+                    }
+                    if (item.type === 'draw') {
+                        setActiveItem(item.id, { openDraw: true });
+                    }
+                });
             }
-
-            // Delete Handler
-            const deleteBtn = li.querySelector('.note-item-delete-btn');
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent item selection
-                handleDeleteRequest(item.id);
-            });
-
-            itemsListEl.appendChild(li);
         }
+
+        const deleteBtn = li.querySelector('.note-item-delete-btn');
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleDeleteRequest(item.id);
+        });
+
+        itemsListEl.appendChild(li);
     });
 }
 
@@ -1148,10 +1183,9 @@ function handleDeleteRequest(targetId) {
 }
 
 function deleteItems(idsToDelete) {
-    const proj = getCurrentProject();
-    if (!proj) return;
+    if (!activeProjectId) return;
 
-    proj.items = proj.items.filter(item => !idsToDelete.includes(item.id));
+    DevNotebookDB.deleteItems(idsToDelete);
 
     // Clear selection
     selectedItemIds.clear();
@@ -1159,27 +1193,18 @@ function deleteItems(idsToDelete) {
     // Reset active item if deleted
     if (idsToDelete.includes(activeItemId)) {
         activeItemId = null;
-        if (proj.items.length > 0) {
-            // Select first available of current type?
-            const next = proj.items.find(i => i.type === activeItemType);
-            if (next) {
-                activeItemId = next.id;
-                selectedItemIds.add(next.id);
-            } else {
-                // Or create new if empty? Users might prefer empty list.
-                // createNewItem(); 
-                // Let's just clear editor
-            }
+        const remaining = DevNotebookDB.getItems(activeProjectId, activeItemType);
+        if (remaining.length > 0) {
+            activeItemId = remaining[0].id;
+            selectedItemIds.add(remaining[0].id);
         } else {
-            // Create new if truly empty to avoid confusing empty state?
             createNewItem();
+            return;
         }
     } else if (activeItemId) {
-        // Retain selection of active item
         selectedItemIds.add(activeItemId);
     }
 
-    saveWorkspaces();
     renderItemsList();
     if (activeItemId) openItemEditor(activeItemId);
     else hideEditors();
@@ -1261,29 +1286,26 @@ function setActiveItem(id, { openDraw = false } = {}) {
 }
 
 function createNewItem() {
-    if (activeItemType === 'draw') {
-        const proj = getCurrentProject();
-        if (!proj) return;
+    if (!activeProjectId) return;
 
+    if (activeItemType === 'draw') {
         const newItem = {
             id: Date.now().toString(),
+            project_id: activeProjectId,
             type: 'draw',
             title: 'New canvas',
             created: new Date().toISOString(),
-            drawUrl: getDrawCollabLinkUrl(true)
+            draw_url: getDrawCollabLinkUrl(true)
         };
 
-        proj.items.unshift(newItem);
-        saveWorkspaces();
+        DevNotebookDB.createItem(newItem);
         setActiveItem(newItem.id, { openDraw: true });
         return;
     }
 
-    const proj = getCurrentProject();
-    if (!proj) return;
-
     const newItem = {
         id: Date.now().toString(),
+        project_id: activeProjectId,
         type: activeItemType,
         title: '',
         created: new Date().toISOString()
@@ -1300,8 +1322,7 @@ function createNewItem() {
         newItem.notes = '';
     }
 
-    proj.items.unshift(newItem); // Add to top
-    saveWorkspaces();
+    DevNotebookDB.createItem(newItem);
     setActiveItem(newItem.id);
 }
 
@@ -1309,19 +1330,17 @@ function createNewItem() {
 
 workspaceSelect.addEventListener('change', (e) => {
     activeWorkspaceId = e.target.value;
-    // Set active project to first in new workspace
-    const ws = getCurrentWorkspace();
-    if (ws && ws.projects.length > 0) activeProjectId = ws.projects[0].id;
+    const projects = DevNotebookDB.getProjects(activeWorkspaceId);
+    if (projects.length > 0) activeProjectId = projects[0].id;
     saveWorkspaces();
     renderSidebarControls();
     renderItemsList();
     if (activeItemType === 'draw') {
-        const proj = getCurrentProject();
-        const firstDraw = proj ? proj.items.find(i => i.type === 'draw') : null;
-        if (firstDraw) setActiveItem(firstDraw.id);
+        const items = DevNotebookDB.getItems(activeProjectId, 'draw');
+        if (items.length > 0) setActiveItem(items[0].id);
         else createNewItem();
     } else {
-        createNewItem(); // Or select first
+        createNewItem();
     }
 });
 
@@ -1330,9 +1349,8 @@ projectSelect.addEventListener('change', (e) => {
     saveWorkspaces();
     renderItemsList();
     if (activeItemType === 'draw') {
-        const proj = getCurrentProject();
-        const firstDraw = proj ? proj.items.find(i => i.type === 'draw') : null;
-        if (firstDraw) setActiveItem(firstDraw.id);
+        const items = DevNotebookDB.getItems(activeProjectId, 'draw');
+        if (items.length > 0) setActiveItem(items[0].id);
         else createNewItem();
     } else {
         createNewItem();
@@ -1342,15 +1360,13 @@ projectSelect.addEventListener('change', (e) => {
 addWorkspaceBtn.addEventListener('click', async () => {
     const name = prompt('New Workspace Name:');
     if (name) {
-        const newWs = {
-            id: 'ws_' + Date.now(),
-            name: name,
-            projects: [{ id: 'proj_' + Date.now(), name: 'General', items: [] }]
-        };
-        workspaces.push(newWs);
-        activeWorkspaceId = newWs.id;
-        activeProjectId = newWs.projects[0].id;
-        await saveWorkspaces();
+        const wsId = 'ws_' + Date.now();
+        const projId = 'proj_' + Date.now();
+        DevNotebookDB.createWorkspace(wsId, name);
+        DevNotebookDB.createProject(projId, wsId, 'General');
+        activeWorkspaceId = wsId;
+        activeProjectId = projId;
+        saveWorkspaces();
         renderSidebarControls();
         renderItemsList();
         createNewItem();
@@ -1360,12 +1376,11 @@ addWorkspaceBtn.addEventListener('click', async () => {
 addProjectBtn.addEventListener('click', async () => {
     const name = prompt('New Project Name:');
     if (name) {
-        const ws = getCurrentWorkspace();
-        if (ws) {
-            const newProj = { id: 'proj_' + Date.now(), name: name, items: [] };
-            ws.projects.push(newProj);
-            activeProjectId = newProj.id;
-            await saveWorkspaces();
+        if (activeWorkspaceId) {
+            const projId = 'proj_' + Date.now();
+            DevNotebookDB.createProject(projId, activeWorkspaceId, name);
+            activeProjectId = projId;
+            saveWorkspaces();
             renderSidebarControls();
             renderItemsList();
             createNewItem();
@@ -1378,7 +1393,7 @@ resourceTabs.forEach(btn => {
         resourceTabs.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeItemType = btn.dataset.type;
-        saveWorkspaces(); // Save state immediately
+        saveWorkspaces();
 
         if (activeItemType === 'draw') {
             activeItemId = null;
@@ -1388,12 +1403,11 @@ resourceTabs.forEach(btn => {
             return;
         }
         renderItemsList();
-        // Try to select first item of new type
-        const proj = getCurrentProject();
-        if (proj) {
-            const first = proj.items.find(i => i.type === activeItemType);
-            if (first) setActiveItem(first.id);
-            else createNewItem();
+        const items = DevNotebookDB.getItems(activeProjectId, activeItemType);
+        if (items.length > 0) {
+            setActiveItem(items[0].id);
+        } else {
+            createNewItem();
         }
     });
 });
@@ -1407,23 +1421,17 @@ const quickCredentialBtn = document.getElementById('quick-credential-btn');
     if (btn) {
         btn.addEventListener('click', () => {
             const type = btn.dataset.type;
-            // Update main resource tabs
             resourceTabs.forEach(tab => {
-                if (tab.dataset.type === type) {
-                    tab.classList.add('active');
-                } else {
-                    tab.classList.remove('active');
-                }
+                tab.classList.toggle('active', tab.dataset.type === type);
             });
             activeItemType = type;
-            saveWorkspaces(); // Save state immediately
+            saveWorkspaces();
             renderItemsList();
-            // Try to select first item of new type
-            const proj = getCurrentProject();
-            if (proj) {
-                const first = proj.items.find(i => i.type === activeItemType);
-                if (first) setActiveItem(first.id);
-                else createNewItem();
+            const items = DevNotebookDB.getItems(activeProjectId, activeItemType);
+            if (items.length > 0) {
+                setActiveItem(items[0].id);
+            } else {
+                createNewItem();
             }
         });
     }
@@ -1438,8 +1446,7 @@ editWorkspaceBtn.addEventListener('click', async () => {
 
     const newName = prompt('Rename Workspace:', ws.name);
     if (newName && newName.trim() !== '') {
-        ws.name = newName.trim();
-        await saveWorkspaces();
+        DevNotebookDB.updateWorkspace(ws.id, newName.trim());
         renderSidebarControls();
         showNotification('Workspace renamed');
     }
@@ -1450,34 +1457,30 @@ deleteWorkspaceBtn.addEventListener('click', async () => {
     const ws = getCurrentWorkspace();
     if (!ws) return;
 
-    if (workspaces.length <= 1) {
+    const allWs = DevNotebookDB.getWorkspaces();
+    if (allWs.length <= 1) {
         showNotification('Cannot delete the last workspace', 'error');
         return;
     }
 
     if (confirm(`Are you sure you want to delete workspace "${ws.name}"? All projects and items inside it will be lost.`)) {
-        // Remove workspace
-        workspaces = workspaces.filter(w => w.id !== ws.id);
+        DevNotebookDB.deleteWorkspace(ws.id);
 
-        // Select another workspace
-        activeWorkspaceId = workspaces[0].id;
-        if (workspaces[0].projects.length > 0) {
-            activeProjectId = workspaces[0].projects[0].id;
-        } else {
-            activeProjectId = null;
-        }
+        const remaining = DevNotebookDB.getWorkspaces();
+        activeWorkspaceId = remaining[0].id;
+        const projects = DevNotebookDB.getProjects(activeWorkspaceId);
+        activeProjectId = projects.length > 0 ? projects[0].id : null;
 
-        await saveWorkspaces();
+        saveWorkspaces();
         renderSidebarControls();
         renderItemsList();
 
-        // Try to select an item
-        const proj = getCurrentProject();
-        if (proj && proj.items.length > 0) {
-            const next = proj.items.find(i => i.type === activeItemType) || proj.items[0];
-            setActiveItem(next ? next.id : null);
+        if (activeProjectId) {
+            const items = DevNotebookDB.getItems(activeProjectId, activeItemType);
+            if (items.length > 0) setActiveItem(items[0].id);
+            else setActiveItem(null);
         } else {
-            setActiveItem(null); // Or create new?
+            setActiveItem(null);
         }
 
         showNotification('Workspace deleted');
@@ -1491,42 +1494,36 @@ editProjectBtn.addEventListener('click', async () => {
 
     const newName = prompt('Rename Project:', proj.name);
     if (newName && newName.trim() !== '') {
-        proj.name = newName.trim();
-        await saveWorkspaces();
-        renderSidebarControls(); // Project names are in select
+        DevNotebookDB.updateProject(proj.id, newName.trim());
+        renderSidebarControls();
         showNotification('Project renamed');
     }
 });
 
 // Delete Project
 deleteProjectBtn.addEventListener('click', async () => {
-    const ws = getCurrentWorkspace();
     const proj = getCurrentProject();
-    if (!ws || !proj) return;
+    if (!proj || !activeWorkspaceId) return;
 
-    if (ws.projects.length <= 1) {
+    const allProjects = DevNotebookDB.getProjects(activeWorkspaceId);
+    if (allProjects.length <= 1) {
         showNotification('Cannot delete the last project in a workspace', 'error');
         return;
     }
 
     if (confirm(`Are you sure you want to delete project "${proj.name}"? All items inside it will be lost.`)) {
-        // Remove project
-        ws.projects = ws.projects.filter(p => p.id !== proj.id);
+        DevNotebookDB.deleteProject(proj.id);
 
-        // Select another project
-        if (ws.projects.length > 0) {
-            activeProjectId = ws.projects[0].id;
-        }
+        const remaining = DevNotebookDB.getProjects(activeWorkspaceId);
+        activeProjectId = remaining.length > 0 ? remaining[0].id : null;
 
-        await saveWorkspaces();
+        saveWorkspaces();
         renderSidebarControls();
         renderItemsList();
 
-        // Select item
-        const newProj = getCurrentProject();
-        if (newProj && newProj.items.length > 0) {
-            const next = newProj.items.find(i => i.type === activeItemType) || newProj.items[0];
-            if (next) setActiveItem(next.id);
+        if (activeProjectId) {
+            const items = DevNotebookDB.getItems(activeProjectId, activeItemType);
+            if (items.length > 0) setActiveItem(items[0].id);
             else {
                 setActiveItem(null);
                 createNewItem();
@@ -1545,14 +1542,17 @@ fabAddBtn.addEventListener('click', createNewItem);
 
 // Bookmark Save
 saveBookmarkBtn.addEventListener('click', () => {
-    const item = getItem(activeItemId);
-    if (item && item.type === 'bookmark') {
-        item.title = bookmarkTitleInput.value;
-        item.url = bookmarkUrlInput.value;
-        item.description = bookmarkDescInput.value;
-        saveWorkspaces();
-        renderItemsList(); // Update title in list
-        showNotification('Bookmark saved');
+    if (activeItemId) {
+        const item = getItem(activeItemId);
+        if (item && item.type === 'bookmark') {
+            DevNotebookDB.updateItem(activeItemId, {
+                title: bookmarkTitleInput.value,
+                url: bookmarkUrlInput.value,
+                description: bookmarkDescInput.value
+            });
+            renderItemsList();
+            showNotification('Bookmark saved');
+        }
     }
 });
 
@@ -1563,15 +1563,18 @@ visitBookmarkBtn.addEventListener('click', () => {
 
 // Credential Save
 saveCredentialBtn.addEventListener('click', () => {
-    const item = getItem(activeItemId);
-    if (item && item.type === 'credential') {
-        item.title = credentialTitleInput.value;
-        item.username = credentialUsernameInput.value;
-        item.password = credentialPasswordInput.value;
-        item.notes = credentialNotesInput.value;
-        saveWorkspaces();
-        renderItemsList();
-        showNotification('Credential saved');
+    if (activeItemId) {
+        const item = getItem(activeItemId);
+        if (item && item.type === 'credential') {
+            DevNotebookDB.updateItem(activeItemId, {
+                title: credentialTitleInput.value,
+                username: credentialUsernameInput.value,
+                password: credentialPasswordInput.value,
+                notes: credentialNotesInput.value
+            });
+            renderItemsList();
+            showNotification('Credential saved');
+        }
     }
 });
 
@@ -1593,58 +1596,36 @@ copyBtns.forEach(btn => {
 
 
 // --- Cross-Tab Synchronization ---
-// Listen for changes in chrome.storage from other tabs
-// --- Cross-Tab Synchronization ---
-// Listen for changes in chrome.storage from other tabs
-chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local') {
-        if (changes.workspaces) {
-            workspaces = changes.workspaces.newValue || [];
-            if (activeProjectId) {
-                // Check if active project still exists
-                const proj = getCurrentProject();
-                if (!proj) {
-                    // Fallback if deleted
-                    if (workspaces.length > 0) {
-                        activeWorkspaceId = workspaces[0].id;
-                        if (workspaces[0].projects.length > 0) activeProjectId = workspaces[0].projects[0].id;
-                    }
-                }
-            }
+// With SQLite, cross-tab sync is handled by reloading from DB
+// Use BroadcastChannel for lightweight notifications
+const _syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('devnotebook_sync') : null;
+
+function notifySyncPeers() {
+    if (_syncChannel) _syncChannel.postMessage({ type: 'data_changed', ts: Date.now() });
+}
+
+if (_syncChannel) {
+    _syncChannel.onmessage = (e) => {
+        if (e.data && e.data.type === 'data_changed') {
+            // Reload UI from DB (another tab made changes)
             renderSidebarControls();
             renderItemsList();
-
-            // If active item updated, refresh it (if not typing)
-            if (activeItemId && !quill.hasFocus()) {
-                const item = getItem(activeItemId);
-                if (item && item.type === 'note') {
-                    // Update Quill if needed (complex diffing omitted for brevity, just refreshing title/list usually enough unless collaborative)
-                }
-            }
-        }
-
-        if (changes.activeWorkspaceId) {
-            activeWorkspaceId = changes.activeWorkspaceId.newValue;
-            renderSidebarControls();
-            renderItemsList();
-        }
-
-        if (changes.activeProjectId) {
-            activeProjectId = changes.activeProjectId.newValue;
-            renderItemsList();
-        }
-
-        if (changes.todos) {
-            todos = changes.todos.newValue || [];
+            todos = DevNotebookDB.getTodos().map(t => ({
+                id: t.id, text: t.text,
+                completed: !!t.completed,
+                createdAt: t.created_at,
+                completedAt: t.completed_at
+            }));
             renderTodoList();
-        }
 
-        if (changes.theme) {
-            currentTheme = changes.theme.newValue || 'system';
-            applyTheme(currentTheme);
+            const newTheme = DevNotebookDB.getSetting('theme', 'system');
+            if (newTheme !== currentTheme) {
+                currentTheme = newTheme;
+                applyTheme(currentTheme);
+            }
         }
-    }
-});
+    };
+}
 
 // --- Notification System ---
 const notificationEl = document.getElementById('notification');
@@ -1668,19 +1649,15 @@ function showNotification(message, type = 'info', duration = 3000) {
 // --- Note Management (Replaced by Item Management) ---
 
 function deleteActiveItem() {
-    const proj = getCurrentProject();
-    if (!proj || !activeItemId) return;
+    if (!activeProjectId || !activeItemId) return;
 
     if (confirm('Are you sure you want to delete this item?')) {
-        proj.items = proj.items.filter(i => i.id !== activeItemId);
-        saveWorkspaces();
+        DevNotebookDB.deleteItem(activeItemId);
         renderItemsList();
 
-        // Select another item
-        if (proj.items.length > 0) {
-            // Find one of compatible type if possible
-            const next = proj.items.find(i => i.type === activeItemType) || proj.items[0];
-            setActiveItem(next.id);
+        const remaining = DevNotebookDB.getItems(activeProjectId, activeItemType);
+        if (remaining.length > 0) {
+            setActiveItem(remaining[0].id);
         } else {
             createNewItem();
         }
@@ -1713,7 +1690,8 @@ function createTodo(text) {
     };
 
     todos.unshift(newTodo);
-    saveTodos();
+    DevNotebookDB.createTodo(newTodo);
+    notifySyncPeers();
     renderTodoList();
 }
 
@@ -1730,8 +1708,11 @@ function toggleTodo(id) {
         todo.completed = !todo.completed;
         if (todo.completed) {
             todo.completedAt = Date.now();
+        } else {
+            todo.completedAt = null;
         }
-        saveTodos();
+        DevNotebookDB.updateTodo(id, { completed: todo.completed, completedAt: todo.completedAt });
+        notifySyncPeers();
         renderTodoList();
     }
 }
@@ -1739,7 +1720,8 @@ function toggleTodo(id) {
 function deleteTodo(id) {
     if (confirm('Are you sure you want to delete this todo?')) {
         todos = todos.filter(t => t.id !== id);
-        saveTodos();
+        DevNotebookDB.deleteTodo(id);
+        notifySyncPeers();
         renderTodoList();
         showNotification('Todo deleted', 'success');
     }
@@ -1750,7 +1732,8 @@ function clearAllTodos() {
 
     if (confirm('Are you sure you want to clear all todos?')) {
         todos = [];
-        saveTodos();
+        DevNotebookDB.deleteAllTodos();
+        notifySyncPeers();
         renderTodoList();
         showNotification('All todos cleared', 'success');
     }
@@ -1767,21 +1750,64 @@ if (aiDock) {
     let xOffset = 0;
     let yOffset = 0;
 
-    // Load saved position
+    // Clamp position so the dock stays within the viewport
+    function clampPosition(x, y) {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const rect = aiDock.getBoundingClientRect();
+        const dockW = rect.width;
+        const dockH = rect.height;
+
+        const minX = 0;
+        const minY = 0;
+        const maxX = vw - dockW;
+        const maxY = vh - dockH;
+
+        return {
+            x: Math.max(minX, Math.min(x, maxX)),
+            y: Math.max(minY, Math.min(y, maxY))
+        };
+    }
+
+    // Load saved position and validate it's in-viewport
     const savedPosition = localStorage.getItem('aiDockPosition');
     if (savedPosition) {
-        const { x, y } = JSON.parse(savedPosition);
-        aiDockContent.style.right = 'auto';
-        aiDockContent.style.bottom = 'auto';
-        aiDockContent.style.left = x + 'px';
-        aiDockContent.style.top = y + 'px';
-        xOffset = x;
-        yOffset = y;
+        try {
+            const { x, y } = JSON.parse(savedPosition);
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            // Only apply if position is remotely sane
+            if (x >= -100 && x < vw && y >= -100 && y < vh) {
+                aiDock.style.left = x + 'px';
+                aiDock.style.top = y + 'px';
+                aiDock.style.bottom = 'auto';
+                aiDock.style.transform = 'none';
+                xOffset = x;
+                yOffset = y;
+            } else {
+                // Stale/off-screen position, clear it
+                localStorage.removeItem('aiDockPosition');
+            }
+        } catch (e) {
+            localStorage.removeItem('aiDockPosition');
+        }
     }
 
     aiDockContent.addEventListener('mousedown', dragStart);
     document.addEventListener('mousemove', drag);
     document.addEventListener('mouseup', dragEnd);
+
+    // Re-clamp on window resize so the dock never stays off-screen
+    window.addEventListener('resize', () => {
+        if (localStorage.getItem('aiDockPosition')) {
+            const clamped = clampPosition(xOffset, yOffset);
+            xOffset = clamped.x;
+            yOffset = clamped.y;
+            aiDock.style.left = clamped.x + 'px';
+            aiDock.style.top = clamped.y + 'px';
+            localStorage.setItem('aiDockPosition', JSON.stringify({ x: clamped.x, y: clamped.y }));
+        }
+    });
 
     function dragStart(e) {
         // Don't drag if clicking on input or button
@@ -1795,6 +1821,17 @@ if (aiDock) {
             return;
         }
 
+        // If no saved position yet, capture the current computed position
+        if (!localStorage.getItem('aiDockPosition')) {
+            const rect = aiDock.getBoundingClientRect();
+            xOffset = rect.left;
+            yOffset = rect.top;
+            aiDock.style.left = xOffset + 'px';
+            aiDock.style.top = yOffset + 'px';
+            aiDock.style.bottom = 'auto';
+            aiDock.style.transform = 'none';
+        }
+
         initialX = e.clientX - xOffset;
         initialY = e.clientY - yOffset;
 
@@ -1806,13 +1843,19 @@ if (aiDock) {
         if (isDragging) {
             e.preventDefault();
 
-            currentX = e.clientX - initialX;
-            currentY = e.clientY - initialY;
+            const rawX = e.clientX - initialX;
+            const rawY = e.clientY - initialY;
+            const clamped = clampPosition(rawX, rawY);
 
+            currentX = clamped.x;
+            currentY = clamped.y;
             xOffset = currentX;
             yOffset = currentY;
 
-            setTranslate(currentX, currentY, aiDockContent);
+            aiDock.style.left = currentX + 'px';
+            aiDock.style.top = currentY + 'px';
+            aiDock.style.bottom = 'auto';
+            aiDock.style.transform = 'none';
         }
     }
 
@@ -1828,17 +1871,6 @@ if (aiDock) {
             localStorage.setItem('aiDockPosition', JSON.stringify({ x: xOffset, y: yOffset }));
         }
     }
-
-    function setTranslate(xPos, yPos, el) {
-        el.style.right = 'auto';
-        el.style.bottom = 'auto';
-        el.style.left = xPos + 'px';
-        el.style.top = yPos + 'px';
-    }
-}
-
-function saveTodos() {
-    chrome.storage.local.set({ todos: todos });
 }
 
 function renderTodoList() {
@@ -1896,14 +1928,20 @@ function renderTodoList() {
     });
 }
 
+function getCompletedTodos() {
+    return todos.filter(t => t.completed).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+}
+
 function renderHistoryList() {
     historyTodoList.innerHTML = '';
 
+    const completedTodos = getCompletedTodos();
+
     // Calculate pagination
-    const totalPages = Math.ceil(todoHistory.length / historyItemsPerPage);
+    const totalPages = Math.ceil(completedTodos.length / historyItemsPerPage);
     const startIndex = (currentHistoryPage - 1) * historyItemsPerPage;
     const endIndex = startIndex + historyItemsPerPage;
-    const paginatedHistory = todoHistory.slice(startIndex, endIndex);
+    const paginatedHistory = completedTodos.slice(startIndex, endIndex);
 
     // Render history items
     paginatedHistory.forEach(todo => {
@@ -1938,30 +1976,32 @@ function renderHistoryList() {
     });
 
     // Update pagination controls
-    updateHistoryPagination(totalPages);
+    updateHistoryPagination(totalPages, completedTodos.length);
 }
 
-function updateHistoryPagination(totalPages) {
+function updateHistoryPagination(totalPages, totalItems) {
     historyPageInfo.textContent = `${currentHistoryPage} / ${Math.max(1, totalPages)}`;
     historyPrevBtn.disabled = currentHistoryPage <= 1;
     historyNextBtn.disabled = currentHistoryPage >= totalPages;
 
-    if (todoHistory.length === 0) {
+    if (totalItems === 0) {
         historyTodoList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No completed todos yet</div>';
     }
 }
 
 function deleteHistoryTodo(id) {
     if (confirm('Remove this todo from history?')) {
-        todoHistory = todoHistory.filter(t => t.id !== id);
+        todos = todos.filter(t => t.id !== id);
+        DevNotebookDB.deleteTodo(id);
+        notifySyncPeers();
 
         // Adjust current page if needed
-        const totalPages = Math.ceil(todoHistory.length / historyItemsPerPage);
+        const completedTodos = getCompletedTodos();
+        const totalPages = Math.ceil(completedTodos.length / historyItemsPerPage);
         if (currentHistoryPage > totalPages && totalPages > 0) {
             currentHistoryPage = totalPages;
         }
 
-        saveTodos();
         renderHistoryList();
         showNotification('Todo removed from history', 'success');
     }
@@ -1996,7 +2036,9 @@ function toggleTheme() {
         currentTheme = 'dark';
     }
     applyTheme(currentTheme);
-    chrome.storage.local.set({ theme: currentTheme });
+    DevNotebookDB.setSetting('theme', currentTheme);
+    try { localStorage.setItem('devnotebook-theme', currentTheme); } catch(e) {}
+    notifySyncPeers();
 }
 
 function applyTheme(theme) {
@@ -2133,16 +2175,14 @@ closeSettingsBtn.addEventListener('click', () => {
 
 deleteAllBtn.addEventListener('click', () => {
     if (confirm('WARNING: This will delete ALL Workspaces, Projects, and items permanently. Are you sure?')) {
-        workspaces = [];
-        activeWorkspaceId = null;
-        activeProjectId = null;
-        todos = [];
-
-        saveWorkspaces();
-        chrome.storage.local.set({ todos: [] });
-
-        // Re-init (will create default workspace)
-        window.location.reload();
+        // Wipe all SQLite data
+        DevNotebookDB.deleteAllTodos();
+        DevNotebookDB.clearChatHistory();
+        const allWs = DevNotebookDB.getWorkspaces();
+        for (const ws of allWs) {
+            DevNotebookDB.deleteWorkspace(ws.id);
+        }
+        DevNotebookDB.forcePersist().then(() => window.location.reload());
     }
 });
 
@@ -2184,16 +2224,15 @@ backToAppBtn.addEventListener('click', () => {
     saveWorkspaces();
     renderItemsList();
 
-    const proj = getCurrentProject();
-    if (proj) {
+    if (activeProjectId) {
         let targetId = null;
         if (restoreItemId) {
-            const found = proj.items.find(i => i.id === restoreItemId && i.type === activeItemType);
-            if (found) targetId = found.id;
+            const found = DevNotebookDB.getItem(restoreItemId);
+            if (found && found.type === activeItemType) targetId = found.id;
         }
         if (!targetId) {
-            const firstOfType = proj.items.find(i => i.type === activeItemType);
-            if (firstOfType) targetId = firstOfType.id;
+            const items = DevNotebookDB.getItems(activeProjectId, activeItemType);
+            if (items.length > 0) targetId = items[0].id;
         }
         if (targetId) setActiveItem(targetId, { openDraw: false });
         else createNewItem();
@@ -2344,12 +2383,7 @@ function exportSingleItem() {
 }
 
 function exportAllWorkspaces() {
-    const data = {
-        workspaces: workspaces,
-        todos: todos,
-        exportDate: new Date().toISOString(),
-        version: '1.2'
-    };
+    const data = DevNotebookDB.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2375,75 +2409,90 @@ function importNotebookFile(file) {
             }
 
             let importedCount = 0;
-            const currentProj = getCurrentProject();
 
             // 1. Import Workspaces (Full Backup)
             if (data.workspaces && Array.isArray(data.workspaces)) {
-                // Determine if we should replace or append. 
-                // For simplicity, we append new workspaces if IDs don't collide, or generate new IDs.
-                // Or just push them as new workspaces.
-
-                const newWorkspaces = data.workspaces.map(ws => {
-                    // Regenerate IDs to avoid collisions
+                for (const ws of data.workspaces) {
                     const newWsId = 'ws_' + Date.now() + Math.random().toString(36).substr(2, 5);
-                    return {
-                        ...ws,
-                        id: newWsId,
-                        projects: ws.projects.map(p => ({
-                            ...p,
-                            id: 'proj_' + Date.now() + Math.random().toString(36).substr(2, 5)
-                        }))
-                    };
-                });
-
-                workspaces = [...workspaces, ...newWorkspaces];
-                importedCount += newWorkspaces.length;
-                showNotification(`Imported ${newWorkspaces.length} workspaces`, 'success');
+                    DevNotebookDB.createWorkspace(newWsId, ws.name);
+                    if (ws.projects && Array.isArray(ws.projects)) {
+                        for (const proj of ws.projects) {
+                            const newProjId = 'proj_' + Date.now() + Math.random().toString(36).substr(2, 5);
+                            DevNotebookDB.createProject(newProjId, newWsId, proj.name);
+                            if (proj.items && Array.isArray(proj.items)) {
+                                for (const item of proj.items) {
+                                    DevNotebookDB.createItem({
+                                        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                                        project_id: newProjId,
+                                        type: item.type || 'note',
+                                        title: item.title || '',
+                                        created: item.created,
+                                        body: item.body,
+                                        url: item.url,
+                                        description: item.description,
+                                        username: item.username,
+                                        password: item.password,
+                                        notes: item.notes,
+                                        draw_url: item.draw_url || item.drawUrl
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    importedCount++;
+                }
+                showNotification(`Imported ${importedCount} workspaces`, 'success');
             }
 
             // 2. Import Single Item
-            if (data.item && currentProj) {
-                const newItem = {
+            if (data.item && activeProjectId) {
+                DevNotebookDB.createItem({
                     ...data.item,
-                    id: Date.now().toString()
-                };
-                currentProj.items.unshift(newItem);
+                    id: Date.now().toString(),
+                    project_id: activeProjectId,
+                    draw_url: data.item.draw_url || data.item.drawUrl
+                });
                 importedCount++;
             }
 
             // 3. Import Legacy Single Note
-            if (data.note && typeof data.note === 'object' && currentProj) {
-                const newNote = {
+            if (data.note && typeof data.note === 'object' && activeProjectId) {
+                DevNotebookDB.createItem({
                     ...data.note,
                     id: Date.now().toString(),
-                    type: 'note' // Ensure type
-                };
-                currentProj.items.unshift(newNote);
+                    project_id: activeProjectId,
+                    type: 'note'
+                });
                 importedCount++;
             }
 
             // 4. Import Legacy Notes Array
-            if (data.notes && Array.isArray(data.notes) && currentProj) {
-                const newNotes = data.notes.map(n => ({
-                    ...n,
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-                    type: 'note'
-                }));
-                currentProj.items.unshift(...newNotes);
-                importedCount += newNotes.length;
+            if (data.notes && Array.isArray(data.notes) && activeProjectId) {
+                for (const n of data.notes) {
+                    DevNotebookDB.createItem({
+                        ...n,
+                        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                        project_id: activeProjectId,
+                        type: 'note'
+                    });
+                    importedCount++;
+                }
             }
 
             // 5. Import Todos
             if (data.todos && Array.isArray(data.todos)) {
-                const newTodos = data.todos.map(todo => ({
-                    ...todo,
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5) // Generate new ID
-                }));
-                todos = [...todos, ...newTodos];
+                for (const todo of data.todos) {
+                    const newTodo = {
+                        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                        text: todo.text,
+                        completed: !!todo.completed,
+                        createdAt: todo.createdAt || Date.now(),
+                        completedAt: todo.completedAt || null
+                    };
+                    todos.push(newTodo);
+                    DevNotebookDB.createTodo(newTodo);
+                }
             }
-
-            await saveWorkspaces();
-            await chrome.storage.local.set({ todos });
 
             // Re-initialize UI
             renderSidebarControls();
@@ -2466,10 +2515,9 @@ function importNotebookFile(file) {
 
 // Load AI Settings
 async function loadAISettings() {
-    const data = await chrome.storage.local.get(['aiSettings']);
-    if (data.aiSettings) {
-        // Merge saved settings with defaults (handling new providers structure)
-        aiSettings = { ...aiSettings, ...data.aiSettings };
+    const savedAI = DevNotebookDB.getSetting('aiSettings', null);
+    if (savedAI) {
+        aiSettings = { ...aiSettings, ...savedAI };
 
         // Ensure providers object exists if migrating from old settings
         if (!aiSettings.providers) {
@@ -2551,9 +2599,9 @@ async function loadAISettings() {
 
 // Load Snippets from storage
 async function loadSnippets() {
-    const data = await chrome.storage.local.get(['aiSnippets']);
-    if (data.aiSnippets && Array.isArray(data.aiSnippets)) {
-        AI_SNIPPETS = data.aiSnippets;
+    const saved = DevNotebookDB.getSetting('aiSnippets', null);
+    if (saved && Array.isArray(saved)) {
+        AI_SNIPPETS = saved;
     } else {
         AI_SNIPPETS = [...DEFAULT_AI_SNIPPETS];
     }
@@ -2626,7 +2674,7 @@ async function saveSnippets() {
     }
 
     AI_SNIPPETS = snippets;
-    await chrome.storage.local.set({ aiSnippets: snippets });
+    DevNotebookDB.setSetting('aiSnippets', snippets);
     renderSnippetsList();
     showNotification('Snippets saved successfully!');
 }
@@ -2634,7 +2682,7 @@ async function saveSnippets() {
 // Reset Snippets to defaults
 async function resetSnippets() {
     AI_SNIPPETS = [...DEFAULT_AI_SNIPPETS];
-    await chrome.storage.local.set({ aiSnippets: AI_SNIPPETS });
+    DevNotebookDB.setSetting('aiSnippets', AI_SNIPPETS);
     renderSnippetsList();
     showNotification('Snippets reset to defaults!');
 }
@@ -2694,7 +2742,7 @@ function updateModelDropdown() {
             } else if (options.length > 0) {
                 aiModelSelect.selectedIndex = 0;
                 aiSettings.lastModel = aiModelSelect.value;
-                chrome.storage.local.set({ aiSettings });
+                DevNotebookDB.setSetting('aiSettings', aiSettings);
             }
         }
     }
@@ -2759,7 +2807,7 @@ if (saveSettingsBtn) {
         aiSettings.alibabaKey = settingsAlibabaKey.value.trim();
         aiSettings.systemInstruction = systemInstructionEl.value.trim();
 
-        await chrome.storage.local.set({ aiSettings });
+        await DevNotebookDB.setSetting('aiSettings', aiSettings);
         updateModelDropdown();
         showNotification('Settings saved successfully!', 'success');
         settingsModal.style.display = 'none';
@@ -2785,7 +2833,7 @@ if (resetSnippetsBtn) {
 if (aiModelSelect) {
     aiModelSelect.addEventListener('change', () => {
         aiSettings.lastModel = aiModelSelect.value;
-        chrome.storage.local.set({ aiSettings });
+        DevNotebookDB.setSetting('aiSettings', aiSettings);
         if (isWebAIModel(aiSettings.lastModel)) {
             webAIIntentActive = true;
             refreshWebAIStatus(false);
@@ -3048,7 +3096,7 @@ if (aiGenerateBtn) {
 
         // Save last used model
         aiSettings.lastModel = model;
-        chrome.storage.local.set({ aiSettings });
+        DevNotebookDB.setSetting('aiSettings', aiSettings);
 
         // UI State
         aiAbortController = new AbortController();
@@ -3071,22 +3119,21 @@ if (aiGenerateBtn) {
                 // Ensure we have an active note item
                 if (!activeItemId || activeItemType !== 'note') {
                     // Create new note item in current project
-                    const proj = getCurrentProject();
-                    if (proj) {
+                    if (activeProjectId) {
                         const newNote = {
                             id: Date.now().toString(),
+                            project_id: activeProjectId,
                             type: 'note',
                             title: 'AI Generated Note',
                             body: '',
-                            createdAt: Date.now(),
-                            updatedAt: Date.now()
+                            created: new Date().toISOString()
                         };
-                        proj.items.unshift(newNote);
-                        activeItemType = 'note'; // Switch to note type view
+                        DevNotebookDB.createItem(newNote);
+                        activeItemType = 'note';
                         activeItemId = newNote.id;
                         saveWorkspaces();
                         renderItemsList();
-                        renderSidebarControls(); // Update UI to reflect type change if needed
+                        renderSidebarControls();
 
                         // Re-init editor with empty content
                         noteTitleEl.value = newNote.title;
@@ -3151,10 +3198,8 @@ if (aiGenerateBtn) {
                         }, 100);
 
                         // Trigger save
-                        const item = getItem(activeItemId);
-                        if (item) {
-                            item.body = quill.getContents();
-                            saveWorkspaces();
+                        if (activeItemId) {
+                            DevNotebookDB.updateItem(activeItemId, { body: quill.getContents() });
                         }
 
                         showNotification('Note added successfully!', 'success');
@@ -3289,9 +3334,8 @@ function streamNoteToEditor(title, content) {
             }, 150);
         }, 100);
 
-        // Save
-        item.body = quill.getContents();
-        saveWorkspaces();
+        // Save (include title in case it was set above)
+        DevNotebookDB.updateItem(activeItemId, { body: quill.getContents(), title: noteTitleEl.value });
         renderItemsList();
 
         showNotification('Note added successfully!', 'success');
@@ -3341,9 +3385,8 @@ if (aiApplyBtn) {
             }, 150);
         }, 100);
 
-        if (item) {
-            item.body = quill.getContents();
-            saveWorkspaces();
+        if (activeItemId) {
+            DevNotebookDB.updateItem(activeItemId, { body: quill.getContents(), title: noteTitleEl.value });
             renderItemsList();
         }
 
@@ -3759,10 +3802,17 @@ async function getLanguageModelAvailability() {
     }
     try {
         if (typeof LanguageModel !== 'undefined') {
-            return await LanguageModel.availability();
+            return await LanguageModel.availability({
+                expectedInputLanguages: ['en'],
+                expectedOutputLanguages: ['en']
+            });
         }
         if (window.ai && window.ai.languageModel && window.ai.languageModel.availability) {
-            const result = await window.ai.languageModel.availability({ languages: ['en'] });
+            const result = await window.ai.languageModel.availability({
+                expectedInputLanguages: ['en'],
+                expectedOutputLanguages: ['en'],
+                languages: ['en']
+            });
             return result?.state || result;
         }
     } catch (e) {
@@ -3804,6 +3854,8 @@ async function startWebAIDownload() {
                     setWebAIProgress(percent);
                 });
             },
+            expectedInputLanguages: ['en'],
+            expectedOutputLanguages: ['en'],
             expectedInputs: [{ type: 'text', languages: ['en'] }],
             expectedOutputs: [{ type: 'text', languages: ['en'] }]
         });
@@ -4321,14 +4373,16 @@ function addStreamingIndicator() {
 function updateActiveNote() {
     const item = getItem(activeItemId);
     if (item && item.type === 'note') {
-        item.body = quill.getContents();
-        saveWorkspaces();
+        DevNotebookDB.updateItem(activeItemId, { body: quill.getContents() });
     }
 }
 
 // Save chat history to storage
 function saveChatHistory() {
-    chrome.storage.local.set({ chatHistory: chatHistory });
+    DevNotebookDB.clearChatHistory();
+    for (const msg of chatHistory) {
+        DevNotebookDB.addChatMessage(msg.role, msg.content);
+    }
 }
 
 // Render chat history (on page load)
@@ -4443,9 +4497,9 @@ if (aiGenerateBtn && (aiPromptInput || aiChatInput)) {
             // Force title update
             item = getItem(activeItemId);
             if (item) {
-                item.title = 'AI Chat - ' + new Date().toLocaleString();
-                noteTitleEl.value = item.title;
-                saveWorkspaces();
+                const chatTitle = 'AI Chat - ' + new Date().toLocaleString();
+                DevNotebookDB.updateItem(activeItemId, { title: chatTitle });
+                noteTitleEl.value = chatTitle;
                 renderItemsList();
             }
         }

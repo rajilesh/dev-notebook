@@ -365,9 +365,16 @@ async function ensureWebAIAvailable() {
 
     try {
         if (typeof LanguageModel !== 'undefined') {
-            availability = await LanguageModel.availability();
+            availability = await LanguageModel.availability({
+                expectedInputLanguages: ['en'],
+                expectedOutputLanguages: ['en']
+            });
         } else if (window.ai && window.ai.languageModel && window.ai.languageModel.availability) {
-            const res = await window.ai.languageModel.availability({ languages: ['en'] });
+            const res = await window.ai.languageModel.availability({
+                expectedInputLanguages: ['en'],
+                expectedOutputLanguages: ['en'],
+                languages: ['en']
+            });
             availability = res?.state || res;
         }
     } catch (e) {
@@ -437,13 +444,19 @@ async function callWebAINonStreaming(userPrompt, systemPrompt) {
     await ensureWebAIAvailable();
     if (typeof LanguageModel !== 'undefined') {
         const session = await LanguageModel.create({
+            expectedInputLanguages: ['en'],
+            expectedOutputLanguages: ['en'],
             expectedInputs: [{ type: 'text', languages: ['en'] }],
             expectedOutputs: [{ type: 'text', languages: ['en'] }]
         });
         const result = await session.prompt(userPrompt, { context: systemPrompt });
         return result?.outputText ?? result ?? '';
     }
-    const session = await window.ai.languageModel.create({ systemPrompt });
+    const session = await window.ai.languageModel.create({
+        systemPrompt,
+        expectedInputLanguages: ['en'],
+        expectedOutputLanguages: ['en']
+    });
     const result = await session.prompt(userPrompt);
     return result?.outputText ?? result ?? '';
 }
@@ -455,6 +468,8 @@ async function callWebAIStreaming(messages, onChunk, onComplete, onError, signal
 
         if (typeof LanguageModel !== 'undefined') {
             const session = await LanguageModel.create({
+                expectedInputLanguages: ['en'],
+                expectedOutputLanguages: ['en'],
                 expectedInputs: [{ type: 'text', languages: ['en'] }],
                 expectedOutputs: [{ type: 'text', languages: ['en'] }]
             });
@@ -479,7 +494,10 @@ async function callWebAIStreaming(messages, onChunk, onComplete, onError, signal
             return fullText;
         }
 
-        const session = await window.ai.languageModel.create();
+        const session = await window.ai.languageModel.create({
+            expectedInputLanguages: ['en'],
+            expectedOutputLanguages: ['en']
+        });
         const stream = await session.promptStreaming(promptText);
         if (signal) {
             signal.addEventListener('abort', () => {
