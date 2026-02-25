@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dev Notebook</title>
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Quill Rich Text Editor -->
     <link href="css/quill.snow.css" rel="stylesheet">
     <!-- Syntax Highlighting -->
@@ -16,82 +17,82 @@
 </head>
 
 <body>
-    <script>
-        // Apply theme instantly from localStorage to prevent flash (default: light)
-        try {
-            const t = localStorage.getItem('devnotebook-theme');
-            if (t !== 'dark') document.body.classList.add('light-mode');
-        } catch(e) {
-            document.body.classList.add('light-mode');
-        }
-    </script>
+    <script src="js/init.js"></script>
     <div class="app-container">
         <aside class="sidebar">
             <div class="sidebar-header-composed">
+                <div class="sidebar-brand" id="sidebar-brand-btn" style="cursor:pointer" title="Home">
+                    <span class="material-symbols-rounded brand-icon">edit_note</span>
+                    <span class="brand-text">Notebook</span>
+                </div>
                 <div class="ws-controls">
                     <select id="workspace-select" class="nav-select" title="Select Workspace"></select>
                     <button id="add-workspace-btn" class="icon-btn small" title="New Workspace">
-                        <span class="material-icons">add_circle_outline</span>
+                        <span class="material-symbols-rounded">add_circle</span>
                     </button>
                     <button id="edit-workspace-btn" class="icon-btn small" title="Rename Workspace">
-                        <span class="material-icons">edit</span>
+                        <span class="material-symbols-rounded">edit</span>
                     </button>
                     <button id="delete-workspace-btn" class="icon-btn small danger" title="Delete Workspace">
-                        <span class="material-icons">delete</span>
+                        <span class="material-symbols-rounded">delete</span>
                     </button>
                 </div>
                 <div class="ws-controls">
                     <select id="project-select" class="nav-select" title="Select Project"></select>
                     <button id="add-project-btn" class="icon-btn small" title="New Project">
-                        <span class="material-icons">create_new_folder</span>
+                        <span class="material-symbols-rounded">create_new_folder</span>
                     </button>
                     <button id="edit-project-btn" class="icon-btn small" title="Rename Project">
-                        <span class="material-icons">edit</span>
+                        <span class="material-symbols-rounded">edit</span>
                     </button>
                     <button id="delete-project-btn" class="icon-btn small danger" title="Delete Project">
-                        <span class="material-icons">delete</span>
+                        <span class="material-symbols-rounded">delete</span>
                     </button>
                 </div>
 
                 <div class="resource-tabs">
                     <button class="tab-btn active" data-type="note" title="Notes">
-                        <span class="material-icons">description</span>
+                        <span class="material-symbols-rounded">description</span>
+                        <span class="tab-label">Notes</span>
                     </button>
                     <button class="tab-btn" data-type="bookmark" title="Bookmarks">
-                        <span class="material-icons">bookmarks</span>
+                        <span class="material-symbols-rounded">bookmark</span>
+                        <span class="tab-label">Bookmarks</span>
                     </button>
                     <button class="tab-btn" data-type="credential" title="Credentials">
-                        <span class="material-icons">password</span>
+                        <span class="material-symbols-rounded">key</span>
+                        <span class="tab-label">Keys</span>
                     </button>
                     <button class="tab-btn" data-type="draw" title="Whiteboard">
-                        <span class="material-icons">gesture</span>
+                        <span class="material-symbols-rounded">draw</span>
+                        <span class="tab-label">Draw</span>
                     </button>
                 </div>
 
                 <div class="search-box">
-                    <span class="material-icons search-icon">search</span>
+                    <span class="material-symbols-rounded search-icon">search</span>
                     <input type="text" id="search-input" placeholder="Search...">
                 </div>
-                <button id="add-item-btn" class="icon-btn" title="Create New Item">
-                    <span class="material-icons">add</span>
+                <button id="add-item-btn" class="add-item-btn" title="Create New Item">
+                    <span class="material-symbols-rounded">add</span>
+                    <span>New Item</span>
                 </button>
             </div>
             <ul id="items-list" class="notes-list">
                 <!-- Items (Notes/Bookmarks/Credentials) will be injected here -->
             </ul>
             <div class="sidebar-footer">
-                <div class="quick-access-btns"
-                    style="display: flex; justify-content: space-around; align-items: center;">
+                <div class="quick-access-btns">
                     <button id="quick-note-btn" class="icon-btn" title="Quick Access: Notes" data-type="note">
-                        <span class="material-icons">description</span>
+                        <span class="material-symbols-rounded">description</span>
                     </button>
                     <button id="quick-bookmark-btn" class="icon-btn" title="Quick Access: Bookmarks"
                         data-type="bookmark">
-                        <span class="material-icons">bookmarks</span>
+                        <span class="material-symbols-rounded">bookmark</span>
                     </button>
                     <button id="quick-credential-btn" class="icon-btn" title="Quick Access: Credentials"
                         data-type="credential">
-                        <span class="material-icons">password</span>
+                        <span class="material-symbols-rounded">key</span>
                     </button>
                 </div>
             </div>
@@ -101,72 +102,240 @@
             <div class="editor-header">
                 <div class="header-left">
                     <button id="toggle-sidebar-btn" class="icon-btn" title="Toggle Sidebar">
-                        <span class="material-icons">menu</span>
+                        <span class="material-symbols-rounded">menu</span>
                     </button>
-                    <input type="text" id="note-title" placeholder="Note Title">
+                    <div class="title-area">
+                        <div class="title-input-wrapper">
+                            <input type="text" id="note-title" placeholder="Untitled">
+                            <div class="title-underline"></div>
+                        </div>
+                        <span id="save-status" class="status">Saved</span>
+                    </div>
                 </div>
                 <div class="actions">
                     <div id="notification" class="notification"></div>
-                    <span id="save-status" class="status">Saved</span>
-                    <button id="open-draw-btn" class="icon-btn" title="Open Whiteboard">
-                        <span class="material-icons">gesture</span>
-                    </button>
-                    <button id="open-photoeditor-btn" class="icon-btn" title="Open Photo Editor">
-                        <span class="material-icons">photo</span>
-                    </button>
-                    <button id="share-btn" class="icon-btn" title="Share Current Note">
-                        <span class="material-icons">share</span>
-                    </button>
-                    <button id="export-single-btn" class="icon-btn" title="Export Current Note">
-                        <span class="material-icons">description</span>
-                    </button>
-                    <button id="import-btn" class="icon-btn" title="Import Notebook">
-                        <span class="material-icons">file_upload</span>
-                    </button>
-                    <input type="file" id="import-input" accept=".json" style="display: none;">
-                    <button id="ai-toggle-btn" class="icon-btn" title="Toggle AI Assistant">
-                        <span class="material-icons">auto_awesome</span>
-                    </button>
-                    <button id="theme-toggle-btn" class="icon-btn" title="Toggle Theme">
-                        <span class="material-icons">brightness_auto</span>
-                    </button>
-                    <button id="delete-note-btn" class="icon-btn danger" title="Delete Note">
-                        <span class="material-icons">delete</span>
-                    </button>
-                    <button id="settings-btn" class="icon-btn" title="Settings">
-                        <span class="material-icons">settings</span>
-                    </button>
-                    <button id="todo-toggle-btn" class="icon-btn" title="Toggle To-Do List">
-                        <span class="material-icons">checklist</span>
-                    </button>
-                </div>
-            </div>
-            <!-- Note Editor (Quill) -->
-            <div id="editor-content" class="editor-content view-pane"></div>
-
-            <!-- Bookmark Editor -->
-            <div id="bookmark-editor" class="view-pane hidden" style="padding: 40px;">
-                <div class="form-group">
-                    <label>Title</label>
-                    <input type="text" id="bookmark-title-input" class="input-field large"
-                        placeholder="Figma Design System">
-                </div>
-                <div class="form-group">
-                    <label>URL</label>
-                    <div class="input-with-icon">
-                        <input type="url" id="bookmark-url-input" class="input-field"
-                            placeholder="https://figma.com/file/...">
-                        <button id="visit-bookmark-btn" class="icon-btn" title="Open Link">
-                            <span class="material-icons">open_in_new</span>
+                    <div class="action-group editor-only">
+                        <button id="open-draw-btn" class="icon-btn" title="Open Whiteboard">
+                            <span class="material-symbols-rounded">draw</span>
+                        </button>
+                        <button id="open-photoeditor-btn" class="icon-btn" title="Open Photo Editor">
+                            <span class="material-symbols-rounded">photo_camera</span>
+                        </button>
+                    </div>
+                    <div class="action-divider editor-only"></div>
+                    <div class="action-group editor-only">
+                        <button id="share-btn" class="icon-btn" title="Share Current Note">
+                            <span class="material-symbols-rounded">share</span>
+                        </button>
+                        <button id="export-single-btn" class="icon-btn" title="Export Current Note">
+                            <span class="material-symbols-rounded">download</span>
+                        </button>
+                        <button id="import-btn" class="icon-btn" title="Import Notebook">
+                            <span class="material-symbols-rounded">upload</span>
+                        </button>
+                        <input type="file" id="import-input" accept=".json" style="display: none;">
+                    </div>
+                    <div class="action-divider editor-only"></div>
+                    <div class="action-group">
+                        <button id="ai-toggle-btn" class="icon-btn" title="Toggle AI Assistant">
+                            <span class="material-symbols-rounded">auto_awesome</span>
+                        </button>
+                        <button id="todo-toggle-btn" class="icon-btn" title="Toggle To-Do List">
+                            <span class="material-symbols-rounded">checklist</span>
+                        </button>
+                    </div>
+                    <div class="action-divider"></div>
+                    <div class="action-group">
+                        <button id="theme-toggle-btn" class="icon-btn" title="Toggle Theme">
+                            <span class="material-symbols-rounded">dark_mode</span>
+                        </button>
+                        <button id="settings-btn" class="icon-btn" title="Settings">
+                            <span class="material-symbols-rounded">settings</span>
+                        </button>
+                        <button id="delete-note-btn" class="icon-btn danger editor-only" title="Delete Note">
+                            <span class="material-symbols-rounded">delete</span>
                         </button>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>Description (Optional)</label>
-                    <textarea id="bookmark-desc-input" class="input-field" rows="4"
-                        placeholder="Description..."></textarea>
+            </div>
+            <!-- Dashboard (shown on page load) -->
+            <div id="dashboard" class="dashboard active">
+                <div class="dashboard-scroll">
+                    <div class="dashboard-greeting">
+                        <h1 id="dashboard-greeting-text">Good morning</h1>
+                        <p class="dashboard-date" id="dashboard-date"></p>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="dashboard-quick-actions">
+                        <button class="dashboard-action-card" id="dashboard-new-note">
+                            <span class="material-symbols-rounded">edit_note</span>
+                            <span>New Note</span>
+                        </button>
+                        <button class="dashboard-action-card" id="dashboard-open-sidebar">
+                            <span class="material-symbols-rounded">menu_open</span>
+                            <span>Open Sidebar</span>
+                        </button>
+                    </div>
+
+                    <div class="dashboard-section" id="dashboard-bookmarks-section">
+                        <div class="dashboard-section-header">
+                            <span class="material-symbols-rounded" style="font-size: 20px; color: var(--accent);">bookmark</span>
+                            <h2>Bookmarks</h2>
+                            <button id="dashboard-add-folder-btn" class="icon-btn small" style="margin-left:auto;" title="New Folder">
+                                <span class="material-symbols-rounded">create_new_folder</span>
+                            </button>
+                            <button id="dashboard-bookmarks-back" class="icon-btn small" style="display:none;" title="Back">
+                                <span class="material-symbols-rounded">arrow_back</span>
+                            </button>
+                        </div>
+                        <div id="dashboard-bookmark-grid" class="bookmark-grid">
+                            <!-- Browser bookmarks rendered by JS -->
+                        </div>
+                    </div>
                 </div>
-                <button id="save-bookmark-btn" class="btn primary">Save Bookmark</button>
+            </div>
+
+            <!-- Note Editor (Quill) -->
+            <div id="editor-content" class="editor-content view-pane"></div>
+
+            <!-- Notion-like Block Handle (+) -->
+            <div id="block-handle" class="notion-block-handle" style="display:none;">
+                <button class="block-handle-btn" title="Click to add a block below">
+                    <span class="material-symbols-rounded">add</span>
+                </button>
+                <button class="block-drag-btn" title="Drag to move, click to open menu">
+                    <span class="material-symbols-rounded">drag_indicator</span>
+                </button>
+            </div>
+
+            <!-- Slash Command Menu -->
+            <div id="slash-menu" class="slash-menu" style="display:none;">
+                <div class="slash-menu-header">
+                    <span class="slash-menu-hint">Type to filter, ↑↓ to navigate, Enter to select</span>
+                </div>
+                <div class="slash-menu-items" id="slash-menu-items">
+                    <!-- Items injected by JS -->
+                </div>
+            </div>
+
+            <!-- Floating Toolbar (on selection) -->
+            <div id="floating-toolbar" class="floating-toolbar" style="display:none;">
+                <button data-format="bold" title="Bold"><b>B</b></button>
+                <button data-format="italic" title="Italic"><i>I</i></button>
+                <button data-format="underline" title="Underline"><u>U</u></button>
+                <button data-format="strike" title="Strikethrough"><s>S</s></button>
+                <span class="ft-divider"></span>
+                <button data-format="code" title="Inline Code"><span class="material-symbols-rounded" style="font-size:16px">code</span></button>
+                <button data-format="link" title="Link"><span class="material-symbols-rounded" style="font-size:16px">link</span></button>
+                <span class="ft-divider"></span>
+                <button data-format="header" data-value="1" title="Heading 1">H1</button>
+                <button data-format="header" data-value="2" title="Heading 2">H2</button>
+                <button data-format="header" data-value="3" title="Heading 3">H3</button>
+                <span class="ft-divider"></span>
+                <button data-format="blockquote" title="Quote"><span class="material-symbols-rounded" style="font-size:16px">format_quote</span></button>
+                <button data-format="list" data-value="bullet" title="Bullet List"><span class="material-symbols-rounded" style="font-size:16px">format_list_bulleted</span></button>
+                <button data-format="list" data-value="ordered" title="Numbered List"><span class="material-symbols-rounded" style="font-size:16px">format_list_numbered</span></button>
+                <button data-format="list" data-value="check" title="To-do List"><span class="material-symbols-rounded" style="font-size:16px">check_box</span></button>
+                <span class="ft-divider"></span>
+                <button data-format="color" title="Text Color"><span class="material-symbols-rounded" style="font-size:16px">format_color_text</span></button>
+                <button data-format="background" title="Highlight"><span class="material-symbols-rounded" style="font-size:16px">highlight</span></button>
+            </div>
+
+            <!-- Color picker popup for floating toolbar -->
+            <div id="ft-color-picker" class="ft-color-picker" style="display:none;">
+                <div class="ft-color-grid" id="ft-color-grid"></div>
+            </div>
+
+            <!-- Table size picker popup -->
+            <div id="table-size-picker" class="table-size-picker" style="display:none;">
+                <div class="table-size-label" id="table-size-label">Select size</div>
+                <div class="table-size-grid" id="table-size-grid"></div>
+            </div>
+
+            <!-- Bookmark Editor -->
+            <div id="bookmark-editor" class="view-pane hidden">
+                <div class="bookmark-manager">
+                    <!-- Left: Folder tree -->
+                    <div class="bm-sidebar">
+                        <div class="bm-sidebar-header">
+                            <h3>Folders</h3>
+                            <button id="bm-add-folder-btn" class="icon-btn small" title="New Folder">
+                                <span class="material-symbols-rounded">create_new_folder</span>
+                            </button>
+                        </div>
+                        <div class="bm-folder-list" id="bm-folder-list">
+                            <div class="bm-folder-item active" data-folder-id="">
+                                <span class="material-symbols-rounded">folder_open</span>
+                                <span>All Bookmarks</span>
+                            </div>
+                            <!-- Folder items injected by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Right: Bookmark list + form -->
+                    <div class="bm-content">
+                        <div class="bm-toolbar">
+                            <div class="bm-toolbar-left">
+                                <h3 id="bm-current-folder-name">All Bookmarks</h3>
+                            </div>
+                            <div class="bm-toolbar-right">
+                                <button id="bm-add-bookmark-btn" class="btn primary small-btn">
+                                    <span class="material-symbols-rounded" style="font-size:18px">add</span>
+                                    Add Bookmark
+                                </button>
+                                <button id="bm-sync-browser-btn" class="icon-btn small" title="Sync to Browser Bookmarks">
+                                    <span class="material-symbols-rounded">sync</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Bookmark list grid -->
+                        <div class="bm-list" id="bm-list">
+                            <!-- Bookmark cards injected by JS -->
+                        </div>
+
+                        <!-- Bookmark edit form (shown when editing) -->
+                        <div id="bm-edit-form" class="bm-edit-form" style="display:none;">
+                            <div class="bm-form-header">
+                                <h4 id="bm-form-title">Add Bookmark</h4>
+                                <button id="bm-close-form-btn" class="icon-btn small">
+                                    <span class="material-symbols-rounded">close</span>
+                                </button>
+                            </div>
+                            <div class="form-group">
+                                <label>Title</label>
+                                <input type="text" id="bookmark-title-input" class="input-field"
+                                    placeholder="My Bookmark">
+                            </div>
+                            <div class="form-group">
+                                <label>URL</label>
+                                <div class="input-with-icon">
+                                    <input type="url" id="bookmark-url-input" class="input-field"
+                                        placeholder="https://example.com">
+                                    <button id="visit-bookmark-btn" class="icon-btn" title="Open Link">
+                                        <span class="material-symbols-rounded">open_in_new</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Folder</label>
+                                <select id="bookmark-folder-select" class="input-field">
+                                    <option value="">No Folder</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <textarea id="bookmark-desc-input" class="input-field" rows="3"
+                                    placeholder="Optional description..."></textarea>
+                            </div>
+                            <div class="bm-form-actions">
+                                <button id="save-bookmark-btn" class="btn primary">Save</button>
+                                <button id="bm-cancel-form-btn" class="btn">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Credential Editor -->
@@ -182,7 +351,7 @@
                         <input type="text" id="credential-username-input" class="input-field"
                             placeholder="user@example.com">
                         <button class="icon-btn copy-btn" data-target="credential-username-input">
-                            <span class="material-icons">content_copy</span>
+                            <span class="material-symbols-rounded">content_copy</span>
                         </button>
                     </div>
                 </div>
@@ -192,10 +361,10 @@
                         <input type="password" id="credential-password-input" class="input-field"
                             placeholder="Password">
                         <button class="icon-btn" id="toggle-password-visibility">
-                            <span class="material-icons">visibility</span>
+                            <span class="material-symbols-rounded">visibility</span>
                         </button>
                         <button class="icon-btn copy-btn" data-target="credential-password-input">
-                            <span class="material-icons">content_copy</span>
+                            <span class="material-symbols-rounded">content_copy</span>
                         </button>
                     </div>
                 </div>
@@ -213,17 +382,17 @@
                 <h3>To-Do List</h3>
                 <div class="todo-header-actions">
                     <button id="clear-all-todos-btn" class="icon-btn" title="Clear All Todos">
-                        <span class="material-icons">delete_sweep</span>
+                        <span class="material-symbols-rounded">delete_sweep</span>
                     </button>
                     <button id="close-todo-btn" class="icon-btn">
-                        <span class="material-icons">close</span>
+                        <span class="material-symbols-rounded">close</span>
                     </button>
                 </div>
             </div>
             <div class="todo-input-container">
                 <input type="text" id="new-todo-input" placeholder="Add a task...">
                 <button id="add-todo-btn" class="icon-btn primary">
-                    <span class="material-icons">add</span>
+                    <span class="material-symbols-rounded">add</span>
                 </button>
             </div>
             <ul id="todo-list" class="todo-list">
@@ -231,20 +400,20 @@
             </ul>
             <div class="todo-pagination">
                 <button id="todo-prev-btn" class="icon-btn small" title="Previous Page">
-                    <span class="material-icons">chevron_left</span>
+                    <span class="material-symbols-rounded">chevron_left</span>
                 </button>
                 <span id="todo-page-info" class="page-info">1 / 1</span>
                 <button id="todo-next-btn" class="icon-btn small" title="Next Page">
-                    <span class="material-icons">chevron_right</span>
+                    <span class="material-symbols-rounded">chevron_right</span>
                 </button>
             </div>
         </aside>
     </div>
     <button id="fab-ai-btn" class="fab-btn" title="AI Assistant">
-        <span class="material-icons">auto_awesome</span>
+        <span class="material-symbols-rounded">auto_awesome</span>
     </button>
     <button id="fab-add-note" class="fab-btn" title="Create New Note">
-        <span class="material-icons">add</span>
+        <span class="material-symbols-rounded">add</span>
     </button>
 
     <!-- Settings Modal -->
@@ -253,7 +422,7 @@
             <div class="modal-header">
                 <h2>Settings</h2>
                 <button id="close-settings-btn" class="icon-btn">
-                    <span class="material-icons">close</span>
+                    <span class="material-symbols-rounded">close</span>
                 </button>
             </div>
             <div class="modal-body">
@@ -438,7 +607,7 @@
                         when you type / in the AI textarea.</p>
                     <div id="snippets-list" class="snippets-list"></div>
                     <button id="add-snippet-btn" class="btn" style="margin-top: 10px; width: 100%;">
-                        <span class="material-icons" style="font-size: 16px; vertical-align: middle;">add</span>
+                        <span class="material-symbols-rounded" style="font-size: 16px; vertical-align: middle;">add</span>
                         Add Snippet
                     </button>
                     <div style="display: flex; gap: 10px; margin-top: 10px;">
@@ -455,7 +624,7 @@
                             <p>Download all your notes and to-dos as a JSON backup file.</p>
                         </div>
                         <button id="export-all-btn" class="btn btn-primary">
-                            <span class="material-icons">file_download</span>
+                            <span class="material-symbols-rounded">file_download</span>
                             Export All
                         </button>
                     </div>
@@ -465,7 +634,7 @@
                             <p>Permanently delete all notes and to-dos. This action cannot be undone.</p>
                         </div>
                         <button id="delete-all-btn" class="btn btn-danger">
-                            <span class="material-icons">delete_forever</span>
+                            <span class="material-symbols-rounded">delete_forever</span>
                             Delete All
                         </button>
                     </div>
@@ -481,7 +650,7 @@
             <div class="ai-controls-row">
                 <input type="file" id="ai-chat-file-input" accept="image/*,video/*" multiple hidden>
                 <button id="ai-chat-attach-btn" class="icon-btn small" title="Attach Image/Video">
-                    <span class="material-icons">attach_file</span>
+                    <span class="material-symbols-rounded">attach_file</span>
                 </button>
                 <select id="ai-model-select" class="ai-model-select" title="Select AI Model">
                     <optgroup label="Google">
@@ -526,7 +695,7 @@
                     <option value="video">Generate Video</option>
                 </select>
                 <button id="ai-generate-btn" class="ai-send-btn" title="Generate">
-                    <span class="material-icons">arrow_upward</span>
+                    <span class="material-symbols-rounded">arrow_upward</span>
                 </button>
             </div>
             <div id="webai-status" class="webai-status hidden">
@@ -545,7 +714,7 @@
                     placeholder="Ask AI to write something... (Type / for snippets)" rows="3"></textarea>
                 <div id="ai-snippets-menu" class="snippets-menu hidden"></div>
                 <button id="webai-help-btn" class="ai-help-btn" title="Web AI guides">
-                    <span class="material-icons">help_outline</span>
+                    <span class="material-symbols-rounded">help_outline</span>
                 </button>
             </div>
 
@@ -554,7 +723,7 @@
                 <div id="ai-chat-messages" class="ai-chat-messages">
                     <button id="ai-chat-clear-btn" class="chat-clear-btn icon-btn small hidden"
                         title="Clear Chat History">
-                        <span class="material-icons">delete_sweep</span>
+                        <span class="material-symbols-rounded">delete_sweep</span>
                     </button>
                 </div>
                 <div class="ai-chat-input-wrapper">
@@ -562,12 +731,12 @@
                     <div class="ai-chat-controls">
                         <input type="file" id="ai-chat-file-input" accept="image/*,video/*" multiple hidden>
                         <button id="ai-chat-attach-btn" class="icon-btn small" title="Attach Image/Video">
-                            <span class="material-icons">attach_file</span>
+                            <span class="material-symbols-rounded">attach_file</span>
                         </button>
                         <textarea id="ai-chat-input" class="ai-chat-input"
                             placeholder="Type your message... (Type / for snippets)" rows="1"></textarea>
                         <button id="ai-chat-send-btn" class="icon-btn small" title="Send Message">
-                            <span class="material-icons">send</span>
+                            <span class="material-symbols-rounded">send</span>
                         </button>
                     </div>
                 </div>
@@ -575,7 +744,7 @@
 
             <div id="ai-loading" class="hidden"
                 style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 8px;">
-                <span class="material-icons spin" style="font-size: 14px;">refresh</span> <span>Processing...</span>
+                <span class="material-symbols-rounded spin" style="font-size: 14px;">refresh</span> <span>Processing...</span>
                 <button id="ai-stop-btn" class="btn secondary small hidden" style="padding: 2px 8px; font-size: 11px;">Stop</button>
             </div>
 
@@ -587,10 +756,10 @@
                     <span class="preview-label">Preview</span>
                     <div class="preview-actions">
                         <button id="ai-cancel-btn" class="icon-btn small" title="Discard">
-                            <span class="material-icons">close</span>
+                            <span class="material-symbols-rounded">close</span>
                         </button>
                         <button id="ai-apply-btn" class="icon-btn small" title="Append to Note">
-                            <span class="material-icons">check</span>
+                            <span class="material-symbols-rounded">check</span>
                         </button>
                     </div>
                 </div>
@@ -603,10 +772,10 @@
                     <span class="preview-label">Generated Todos</span>
                     <div class="preview-actions">
                         <button id="ai-todos-cancel-btn" class="icon-btn small" title="Discard Todos">
-                            <span class="material-icons">close</span>
+                            <span class="material-symbols-rounded">close</span>
                         </button>
                         <button id="ai-todos-apply-btn" class="icon-btn small" title="Add Todos">
-                            <span class="material-icons">check</span>
+                            <span class="material-symbols-rounded">check</span>
                         </button>
                     </div>
                 </div>
@@ -621,32 +790,32 @@
             <div class="modal-header">
                 <h3 id="media-modal-title">Generate Image</h3>
                 <button class="close-btn" id="close-media-modal">
-                    <span class="material-icons">close</span>
+                    <span class="material-symbols-rounded">close</span>
                 </button>
             </div>
             <div class="modal-body media-modal-body">
                 <div id="media-preview-area" class="media-preview-area hidden">
                     <div id="media-loading" class="media-loading hidden">
-                        <span class="material-icons spin">refresh</span>
+                        <span class="material-symbols-rounded spin">refresh</span>
                         <p>Generating...</p>
                     </div>
                     <img id="generated-image" class="generated-media hidden" alt="Generated content">
                     <video id="generated-video" class="generated-media hidden" controls></video>
                     <div class="media-actions hidden" id="media-actions">
                         <button id="download-media-btn" class="btn primary">
-                            <span class="material-icons">download</span> Download
+                            <span class="material-symbols-rounded">download</span> Download
                         </button>
                         <button id="insert-media-btn" class="btn primary">
-                            <span class="material-icons">insert_photo</span> Insert to Note
+                            <span class="material-symbols-rounded">insert_photo</span> Insert to Note
                         </button>
                         <button id="regenerate-media-btn" class="btn secondary">
-                            <span class="material-icons">refresh</span> Regenerate
+                            <span class="material-symbols-rounded">refresh</span> Regenerate
                         </button>
                     </div>
                 </div>
                 <div class="media-prompt-container">
                     <div id="media-provider-info" class="media-provider-info" style="display: none;">
-                        <span class="material-icons">info</span>
+                        <span class="material-symbols-rounded">info</span>
                         <span id="media-provider-text">Using: DALL-E 3</span>
                     </div>
                     <textarea id="media-prompt-input" class="media-prompt-input"
@@ -679,7 +848,7 @@
                         </div>
                     </div>
                     <button id="generate-media-btn" class="btn primary large">
-                        <span class="material-icons">auto_awesome</span> Generate
+                        <span class="material-symbols-rounded">auto_awesome</span> Generate
                     </button>
                 </div>
             </div>
@@ -692,7 +861,7 @@
             <div class="modal-header">
                 <h3>Web AI Models & Guides</h3>
                 <button id="close-webai-storage-btn" class="icon-btn">
-                    <span class="material-icons">close</span>
+                    <span class="material-symbols-rounded">close</span>
                 </button>
             </div>
             <div class="modal-body">
@@ -733,10 +902,9 @@
     </div>
 
     <iframe src="photoeditor/photoeditor.html" id="photoeditor" class="photoeditor"></iframe>
-    asd
     <iframe src="draw/index.html" id="excalidraw" class="excalidraw"></iframe>
 
-    <button id="back-to-app-btn" class="floating-nav-btn" title="Back to App">< Back</button>
+    <button id="back-to-app-btn" class="floating-nav-btn" title="Back to App"><span class="material-symbols-rounded" style="font-size:16px">arrow_back</span> Back</button>
 
     <script src="js/highlight.min.js"></script>
     <script src="js/quill.min.js"></script>

@@ -504,34 +504,24 @@ function initializeQuill() {
             'markdown', 'dockerfile', 'nginx', 'apache', 'r', 'matlab', 'perl']
     });
 
-    // Initialize Quill with comprehensive toolbar and code support
+    // Initialize Quill with Notion-like setup (no visible toolbar, floating toolbar on selection)
     quill = new Quill('#editor-content', {
         theme: 'snow',
         modules: {
             toolbar: {
                 container: [
-                    // Headers and font size
+                    // Hidden toolbar – used programmatically by floating toolbar
                     [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
                     [{ 'font': [] }],
                     [{ 'size': ['small', false, 'large', 'huge'] }],
-
-                    // Text formatting
                     ['bold', 'italic', 'underline', 'strike'],
                     [{ 'color': [] }, { 'background': [] }],
                     [{ 'script': 'sub' }, { 'script': 'super' }],
-
-                    // Lists and alignment
                     [{ 'list': 'ordered' }, { 'list': 'bullet' }, { 'list': 'check' }],
                     [{ 'indent': '-1' }, { 'indent': '+1' }],
                     [{ 'align': [] }],
-
-                    // Blocks
                     ['blockquote', 'code-block'],
-
-                    // Media
                     ['link', 'image', 'video'],
-
-                    // Clear formatting
                     ['clean']
                 ],
                 handlers: {
@@ -546,7 +536,7 @@ function initializeQuill() {
             },
             syntax: true  // Enable syntax highlighting module
         },
-        placeholder: 'Start typing...',
+        placeholder: "Press '/' for commands…",
     });
 
     // Initial highlight
@@ -588,6 +578,33 @@ function initializeQuill() {
         if (activeItemId) {
             DevNotebookDB.updateItem(activeItemId, { title: noteTitleEl.value });
             renderItemsList();
+        }
+    });
+
+    // Tab from title → focus editor content
+    noteTitleEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab' && !e.shiftKey) {
+            e.preventDefault();
+            if (quill) {
+                quill.focus();
+                quill.setSelection(0, 0);
+            }
+        }
+    });
+
+    // Tab from editor → focus first toolbar button
+    quill.root.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab' && !e.shiftKey) {
+            const firstToolbarBtn = document.querySelector('.editor-header .actions .icon-btn');
+            if (firstToolbarBtn) {
+                e.preventDefault();
+                firstToolbarBtn.focus();
+            }
+        }
+        // Shift+Tab from editor → focus title
+        if (e.key === 'Tab' && e.shiftKey) {
+            e.preventDefault();
+            noteTitleEl.focus();
         }
     });
 
@@ -658,8 +675,945 @@ function initializeQuill() {
             autoFormatTimeout = setTimeout(() => {
                 handleMagicFormatting(quill);
             }, 500);
+
+            // Slash command detection
+            handleSlashTrigger(delta);
         }
     });
+
+    // Initialize Notion-like features
+    initNotionFeatures();
+}
+
+// ==========================================
+//  NOTION-LIKE EDITOR FEATURES
+// ==========================================
+
+// --- Slash Command Definitions ---
+const SLASH_COMMANDS = [
+    // Basic blocks
+    { section: 'Basic blocks', icon: 'notes',          title: 'Text',            desc: 'Plain text block',                   action: 'text' },
+    { section: 'Basic blocks', icon: 'title',           title: 'Heading 1',       desc: 'Large section heading',              action: 'h1' },
+    { section: 'Basic blocks', icon: 'title',           title: 'Heading 2',       desc: 'Medium section heading',             action: 'h2' },
+    { section: 'Basic blocks', icon: 'title',           title: 'Heading 3',       desc: 'Small section heading',              action: 'h3' },
+    { section: 'Basic blocks', icon: 'format_list_bulleted', title: 'Bullet List', desc: 'Create a bulleted list',           action: 'bullet' },
+    { section: 'Basic blocks', icon: 'format_list_numbered', title: 'Numbered List', desc: 'Create a numbered list',         action: 'ordered' },
+    { section: 'Basic blocks', icon: 'check_box',       title: 'To-do List',      desc: 'Track tasks with checkboxes',        action: 'check' },
+    { section: 'Basic blocks', icon: 'expand_more',     title: 'Toggle',          desc: 'Collapsible toggle block',           action: 'toggle' },
+    { section: 'Basic blocks', icon: 'format_quote',    title: 'Quote',           desc: 'Capture a quote',                    action: 'quote' },
+    { section: 'Basic blocks', icon: 'horizontal_rule', title: 'Divider',         desc: 'Visual divider line',                action: 'divider' },
+    { section: 'Basic blocks', icon: 'info',            title: 'Callout',         desc: 'Highlighted info block',             action: 'callout' },
+
+    // Media & embeds
+    { section: 'Media',        icon: 'code',            title: 'Code Block',      desc: 'Write code with syntax highlighting',action: 'code' },
+    { section: 'Media',        icon: 'table_chart',     title: 'Table',           desc: 'Insert a spreadsheet-like table',    action: 'table' },
+    { section: 'Media',        icon: 'image',           title: 'Image',           desc: 'Upload or embed an image',           action: 'image' },
+    { section: 'Media',        icon: 'smart_display',   title: 'Video',           desc: 'Embed a video',                      action: 'video' },
+
+    // Inline
+    { section: 'Inline',       icon: 'data_object',     title: 'Inline Code',     desc: 'Mark text as code',                  action: 'inline-code' },
+    { section: 'Inline',       icon: 'link',            title: 'Link',            desc: 'Add a hyperlink',                    action: 'link' },
+];
+
+let slashMenuOpen = false;
+let slashMenuIndex = 0;
+let slashMenuFiltered = [...SLASH_COMMANDS];
+let slashStartIndex = -1;  // position where '/' was typed
+
+function initNotionFeatures() {
+    initFloatingToolbar();
+    initBlockHandle();
+    initSlashMenuEvents();
+    initTableSizePicker();
+}
+
+// --- Slash Command Menu ---
+function initSlashMenuEvents() {
+    // Close menu on outside click
+    document.addEventListener('mousedown', (e) => {
+        const menu = document.getElementById('slash-menu');
+        if (slashMenuOpen && menu && !menu.contains(e.target)) {
+            closeSlashMenu();
+        }
+    });
+
+    // Quill keydown handler for slash menu navigation while typing
+    quill.root.addEventListener('keydown', (e) => {
+        if (slashMenuOpen) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateSlashMenu(1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateSlashMenu(-1);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                executeSlashCommand(slashMenuFiltered[slashMenuIndex]);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeSlashMenu();
+            } else if (e.key === 'Backspace') {
+                // Check if we would delete the slash itself
+                setTimeout(() => {
+                    const sel = quill.getSelection();
+                    if (sel && sel.index <= slashStartIndex) {
+                        closeSlashMenu();
+                    } else if (slashMenuOpen && sel) {
+                        // Re-filter after backspace
+                        const typed = quill.getText(slashStartIndex + 1, sel.index - slashStartIndex - 1);
+                        filterSlashMenu(typed);
+                    }
+                }, 10);
+            }
+        }
+    });
+}
+
+function handleSlashTrigger(delta) {
+    if (!quill) return;
+    const sel = quill.getSelection();
+    if (!sel) return;
+
+    // Check if user just typed '/' at the cursor
+    if (delta && delta.ops) {
+        const lastOp = delta.ops[delta.ops.length - 1];
+        if (lastOp && lastOp.insert === '/') {
+            // Check if it's start of line or preceded by whitespace
+            const idx = sel.index;
+            const text = quill.getText(0, idx);
+            const charBefore = text[idx - 2]; // idx-1 is the '/', idx-2 is char before
+            if (idx === 1 || charBefore === '\n' || charBefore === undefined || charBefore === ' ') {
+                slashStartIndex = idx - 1;
+                openSlashMenu();
+                return;
+            }
+        }
+    }
+
+    // If slash menu is open, filter based on text after /
+    if (slashMenuOpen) {
+        const sel2 = quill.getSelection();
+        if (sel2) {
+            const typed = quill.getText(slashStartIndex + 1, sel2.index - slashStartIndex - 1);
+            filterSlashMenu(typed);
+        }
+    }
+}
+
+function openSlashMenu() {
+    const menu = document.getElementById('slash-menu');
+    if (!menu || !quill) return;
+
+    const bounds = quill.getBounds(quill.getSelection().index);
+    const editorRect = quill.root.closest('.ql-container').getBoundingClientRect();
+
+    let top = editorRect.top + bounds.top + bounds.height + 4;
+    let left = editorRect.left + bounds.left;
+
+    // Ensure it stays in viewport
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (left + 320 > vw) left = vw - 330;
+    if (left < 8) left = 8;
+    if (top + 380 > vh) top = editorRect.top + bounds.top - 390;
+
+    menu.style.top = top + 'px';
+    menu.style.left = left + 'px';
+    menu.style.display = 'flex';
+
+    slashMenuOpen = true;
+    slashMenuIndex = 0;
+    slashMenuFiltered = [...SLASH_COMMANDS];
+    renderSlashMenuItems();
+
+    const searchInput = document.getElementById('slash-menu-input');
+    if (searchInput) {
+        searchInput.value = '';
+        // Don't steal focus from quill so we can detect backspace
+    }
+}
+
+function closeSlashMenu() {
+    const menu = document.getElementById('slash-menu');
+    if (menu) menu.style.display = 'none';
+    slashMenuOpen = false;
+    slashStartIndex = -1;
+
+    // Also close table picker
+    const tp = document.getElementById('table-size-picker');
+    if (tp) tp.style.display = 'none';
+}
+
+function filterSlashMenu(query) {
+    const q = (query || '').toLowerCase().trim();
+    slashMenuFiltered = q
+        ? SLASH_COMMANDS.filter(cmd => cmd.title.toLowerCase().includes(q) || cmd.desc.toLowerCase().includes(q))
+        : [...SLASH_COMMANDS];
+    slashMenuIndex = 0;
+    renderSlashMenuItems();
+}
+
+function navigateSlashMenu(dir) {
+    if (slashMenuFiltered.length === 0) return;
+    slashMenuIndex = (slashMenuIndex + dir + slashMenuFiltered.length) % slashMenuFiltered.length;
+    renderSlashMenuItems();
+    // Scroll active into view
+    const activeEl = document.querySelector('.slash-menu-item.active');
+    if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+}
+
+function renderSlashMenuItems() {
+    const container = document.getElementById('slash-menu-items');
+    if (!container) return;
+
+    let html = '';
+    let currentSection = '';
+    slashMenuFiltered.forEach((cmd, i) => {
+        if (cmd.section !== currentSection) {
+            currentSection = cmd.section;
+            html += `<div class="slash-menu-section-title">${currentSection}</div>`;
+        }
+        html += `
+            <div class="slash-menu-item ${i === slashMenuIndex ? 'active' : ''}" data-index="${i}">
+                <div class="slash-menu-item-icon">
+                    <span class="material-symbols-rounded">${cmd.icon}</span>
+                </div>
+                <div class="slash-menu-item-text">
+                    <div class="slash-menu-item-title">${cmd.title}</div>
+                    <div class="slash-menu-item-desc">${cmd.desc}</div>
+                </div>
+            </div>`;
+    });
+
+    if (slashMenuFiltered.length === 0) {
+        html = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;">No results</div>';
+    }
+
+    container.innerHTML = html;
+
+    // Click handlers
+    container.querySelectorAll('.slash-menu-item').forEach(item => {
+        item.addEventListener('mouseenter', () => {
+            slashMenuIndex = parseInt(item.dataset.index);
+            container.querySelectorAll('.slash-menu-item').forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+        });
+        item.addEventListener('click', () => {
+            executeSlashCommand(slashMenuFiltered[parseInt(item.dataset.index)]);
+        });
+    });
+}
+
+function deleteSlashText() {
+    // Delete the "/" and any filter text typed after it
+    if (slashStartIndex >= 0 && quill) {
+        const sel = quill.getSelection();
+        const end = sel ? sel.index : slashStartIndex + 1;
+        const len = end - slashStartIndex;
+        if (len > 0) {
+            quill.deleteText(slashStartIndex, len, 'user');
+        }
+    }
+}
+
+function executeSlashCommand(cmd) {
+    if (!cmd || !quill) return;
+
+    deleteSlashText();
+    closeSlashMenu();
+
+    const idx = quill.getSelection() ? quill.getSelection().index : quill.getLength() - 1;
+
+    switch (cmd.action) {
+        case 'text':
+            quill.formatLine(idx, 1, { header: false, list: false, blockquote: false, 'code-block': false }, 'user');
+            break;
+        case 'h1':
+            quill.formatLine(idx, 1, 'header', 1, 'user');
+            break;
+        case 'h2':
+            quill.formatLine(idx, 1, 'header', 2, 'user');
+            break;
+        case 'h3':
+            quill.formatLine(idx, 1, 'header', 3, 'user');
+            break;
+        case 'bullet':
+            quill.formatLine(idx, 1, 'list', 'bullet', 'user');
+            break;
+        case 'ordered':
+            quill.formatLine(idx, 1, 'list', 'ordered', 'user');
+            break;
+        case 'check':
+            quill.formatLine(idx, 1, 'list', 'check', 'user');
+            break;
+        case 'quote':
+            quill.formatLine(idx, 1, 'blockquote', true, 'user');
+            break;
+        case 'code':
+            quill.formatLine(idx, 1, 'code-block', true, 'user');
+            break;
+        case 'divider':
+            insertDivider(idx);
+            break;
+        case 'callout':
+            insertCallout(idx);
+            break;
+        case 'toggle':
+            insertToggle(idx);
+            break;
+        case 'table':
+            showTableSizePicker(idx);
+            return; // Don't focus quill yet
+        case 'image':
+            triggerImageUpload();
+            break;
+        case 'video':
+            promptVideoEmbed(idx);
+            break;
+        case 'inline-code':
+            quill.format('code', true, 'user');
+            break;
+        case 'link': {
+            const url = prompt('Enter URL:');
+            if (url) {
+                quill.format('link', url, 'user');
+            }
+            break;
+        }
+    }
+
+    quill.focus();
+}
+
+// --- Block insertions ---
+function insertDivider(idx) {
+    quill.insertText(idx, '\n', 'user');
+    quill.insertEmbed(idx, 'divider', true, 'user');
+    quill.insertText(idx + 1, '\n', 'user');
+    quill.setSelection(idx + 2, 0);
+}
+
+// Register divider blot for Quill
+(function registerDividerBlot() {
+    if (typeof Quill === 'undefined') {
+        // Retry after Quill loads
+        const iv = setInterval(() => {
+            if (typeof Quill !== 'undefined') {
+                clearInterval(iv);
+                doRegister();
+            }
+        }, 100);
+    } else {
+        doRegister();
+    }
+
+    function doRegister() {
+        const BlockEmbed = Quill.import('blots/block/embed');
+        class DividerBlot extends BlockEmbed {
+            static create() {
+                const node = super.create();
+                return node;
+            }
+        }
+        DividerBlot.blotName = 'divider';
+        DividerBlot.tagName = 'hr';
+        DividerBlot.className = 'notion-divider';
+        Quill.register(DividerBlot);
+    }
+})();
+
+// Register table wrapper blot for Quill (Quill 1.x has no native table support)
+(function registerTableBlot() {
+    if (typeof Quill === 'undefined') {
+        const iv = setInterval(() => {
+            if (typeof Quill !== 'undefined') {
+                clearInterval(iv);
+                doRegister();
+            }
+        }, 100);
+    } else {
+        doRegister();
+    }
+
+    function doRegister() {
+        const BlockEmbed = Quill.import('blots/block/embed');
+        class TableWrapperBlot extends BlockEmbed {
+            static create(value) {
+                const node = super.create();
+                if (typeof value === 'string' && value.length > 0) {
+                    node.innerHTML = value;
+                }
+                node.setAttribute('contenteditable', 'false');
+                // Allow editing within individual cells
+                setTimeout(() => {
+                    node.querySelectorAll('td, th').forEach(cell => {
+                        cell.setAttribute('contenteditable', 'true');
+                    });
+                }, 0);
+                return node;
+            }
+            static value(node) {
+                return node.innerHTML;
+            }
+        }
+        TableWrapperBlot.blotName = 'notion-table';
+        TableWrapperBlot.tagName = 'DIV';
+        TableWrapperBlot.className = 'notion-table-wrapper';
+        Quill.register(TableWrapperBlot);
+    }
+})();
+
+function insertCallout(idx) {
+    const calloutHTML = `<div class="notion-callout"><span class="notion-callout-icon">💡</span><div class="notion-callout-content" contenteditable="true">Type something…</div></div>`;
+    quill.clipboard.dangerouslyPasteHTML(idx, calloutHTML, 'user');
+    quill.setSelection(idx + 1, 0);
+}
+
+function insertToggle(idx) {
+    const toggleHTML = `<details class="notion-toggle"><summary>Toggle heading</summary><div class="toggle-content"><p>Content goes here…</p></div></details>`;
+    quill.clipboard.dangerouslyPasteHTML(idx, toggleHTML, 'user');
+    quill.setSelection(idx + 1, 0);
+}
+
+function triggerImageUpload() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const idx = quill.getSelection() ? quill.getSelection().index : quill.getLength() - 1;
+            quill.insertEmbed(idx, 'image', e.target.result, 'user');
+        };
+        reader.readAsDataURL(file);
+    };
+    input.click();
+}
+
+function promptVideoEmbed(idx) {
+    const url = prompt('Enter video URL (YouTube, Vimeo, etc.):');
+    if (url) {
+        quill.insertEmbed(idx, 'video', url, 'user');
+        quill.insertText(idx + 1, '\n', 'user');
+        quill.setSelection(idx + 2, 0);
+    }
+}
+
+
+// --- Table insertion ---
+function initTableSizePicker() {
+    const grid = document.getElementById('table-size-grid');
+    if (!grid) return;
+
+    // Create 6x6 grid
+    for (let r = 0; r < 6; r++) {
+        for (let c = 0; c < 6; c++) {
+            const cell = document.createElement('div');
+            cell.className = 'table-size-cell';
+            cell.dataset.row = r;
+            cell.dataset.col = c;
+            cell.addEventListener('mouseenter', () => highlightTableGrid(r, c));
+            cell.addEventListener('click', () => {
+                insertTable(r + 1, c + 1);
+            });
+            grid.appendChild(cell);
+        }
+    }
+}
+
+let _tableSizePickerIdx = 0;
+
+function showTableSizePicker(idx) {
+    _tableSizePickerIdx = idx;
+    const picker = document.getElementById('table-size-picker');
+    const menu = document.getElementById('slash-menu');
+    if (!picker) return;
+
+    // Position next to slash menu
+    if (menu) {
+        const rect = menu.getBoundingClientRect();
+        picker.style.top = rect.top + 'px';
+        picker.style.left = (rect.right + 8) + 'px';
+    }
+
+    picker.style.display = 'block';
+    highlightTableGrid(-1, -1);
+
+    // Close on outside click
+    const handler = (e) => {
+        if (!picker.contains(e.target)) {
+            picker.style.display = 'none';
+            document.removeEventListener('mousedown', handler);
+        }
+    };
+    setTimeout(() => document.addEventListener('mousedown', handler), 10);
+}
+
+function highlightTableGrid(row, col) {
+    const label = document.getElementById('table-size-label');
+    const cells = document.querySelectorAll('#table-size-grid .table-size-cell');
+
+    cells.forEach(cell => {
+        const r = parseInt(cell.dataset.row);
+        const c = parseInt(cell.dataset.col);
+        if (r <= row && c <= col) {
+            cell.classList.add('highlighted');
+        } else {
+            cell.classList.remove('highlighted');
+        }
+    });
+
+    if (row >= 0 && col >= 0) {
+        label.textContent = `${col + 1} × ${row + 1}`;
+    } else {
+        label.textContent = 'Select size';
+    }
+}
+
+function insertTable(rows, cols) {
+    const picker = document.getElementById('table-size-picker');
+    if (picker) picker.style.display = 'none';
+    closeSlashMenu();
+
+    if (!quill) return;
+    const idx = _tableSizePickerIdx || (quill.getSelection() ? quill.getSelection().index : quill.getLength() - 1);
+
+    // Build inner HTML for the table (without the wrapper div — the blot creates that)
+    let innerHtml = '<table class="notion-table"><thead><tr>';
+    for (let c = 0; c < cols; c++) {
+        innerHtml += `<th contenteditable="true">Column ${c + 1}</th>`;
+    }
+    innerHtml += '</tr></thead><tbody>';
+    for (let r = 0; r < rows - 1; r++) {
+        innerHtml += '<tr>';
+        for (let c = 0; c < cols; c++) {
+            innerHtml += '<td contenteditable="true"></td>';
+        }
+        innerHtml += '</tr>';
+    }
+    innerHtml += '</tbody></table>';
+    innerHtml += '<div class="notion-table-actions">';
+    innerHtml += '<button data-table-action="add-row" title="Add Row"><span class="material-symbols-rounded">add</span> Row</button>';
+    innerHtml += '<button data-table-action="add-col" title="Add Column"><span class="material-symbols-rounded">add</span> Column</button>';
+    innerHtml += '<button data-table-action="remove-row" title="Remove Row"><span class="material-symbols-rounded">remove</span> Row</button>';
+    innerHtml += '<button data-table-action="remove-col" title="Remove Column"><span class="material-symbols-rounded">remove</span> Column</button>';
+    innerHtml += '</div>';
+
+    // Use insertEmbed so the registered TableWrapperBlot handles it
+    quill.insertEmbed(idx, 'notion-table', innerHtml, 'user');
+    quill.setSelection(idx + 1, 0);
+    quill.focus();
+
+    // Attach table action handlers via event delegation (after next paint)
+    setTimeout(() => {
+        attachTableActionHandlers();
+    }, 50);
+}
+
+// Re-attach handlers to all table action buttons (idempotent — uses data flag)
+function attachTableActionHandlers() {
+    if (!quill) return;
+    quill.root.querySelectorAll('.notion-table-wrapper .notion-table-actions button[data-table-action]').forEach(btn => {
+        if (btn._tableHandlerBound) return;
+        btn._tableHandlerBound = true;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const action = btn.dataset.tableAction;
+            if (action === 'add-row') addTableRow(btn);
+            else if (action === 'add-col') addTableCol(btn);
+            else if (action === 'remove-row') removeTableRow(btn);
+            else if (action === 'remove-col') removeTableCol(btn);
+        });
+    });
+}
+
+// Table manipulation functions
+function addTableRow(btn) {
+    const wrapper = btn.closest('.notion-table-wrapper');
+    const table = wrapper.querySelector('table');
+    const tbody = table.querySelector('tbody') || table;
+    const cols = table.querySelector('tr').children.length;
+    const row = document.createElement('tr');
+    for (let i = 0; i < cols; i++) {
+        const td = document.createElement('td');
+        td.contentEditable = 'true';
+        row.appendChild(td);
+    }
+    tbody.appendChild(row);
+}
+
+function addTableCol(btn) {
+    const wrapper = btn.closest('.notion-table-wrapper');
+    const table = wrapper.querySelector('table');
+    const rows = table.querySelectorAll('tr');
+    rows.forEach((row, i) => {
+        const cell = document.createElement(i === 0 ? 'th' : 'td');
+        cell.contentEditable = 'true';
+        if (i === 0) cell.textContent = `Col ${row.children.length + 1}`;
+        row.appendChild(cell);
+    });
+}
+
+function removeTableRow(btn) {
+    const wrapper = btn.closest('.notion-table-wrapper');
+    const table = wrapper.querySelector('table');
+    const rows = table.querySelectorAll('tbody tr');
+    if (rows.length > 0) rows[rows.length - 1].remove();
+}
+
+function removeTableCol(btn) {
+    const wrapper = btn.closest('.notion-table-wrapper');
+    const table = wrapper.querySelector('table');
+    const rows = table.querySelectorAll('tr');
+    rows.forEach(row => {
+        if (row.children.length > 1) row.lastElementChild.remove();
+    });
+}
+
+// --- Floating Toolbar (on text selection) ---
+function initFloatingToolbar() {
+    const ft = document.getElementById('floating-toolbar');
+    if (!ft || !quill) return;
+
+    // Selection change → show/hide toolbar
+    quill.on('selection-change', (range, oldRange, source) => {
+        if (range && range.length > 0) {
+            showFloatingToolbar(range);
+        } else {
+            hideFloatingToolbar();
+        }
+    });
+
+    // Format buttons
+    ft.querySelectorAll('button[data-format]').forEach(btn => {
+        btn.addEventListener('mousedown', (e) => {
+            e.preventDefault(); // prevent losing selection
+            const format = btn.dataset.format;
+            const value = btn.dataset.value;
+
+            if (format === 'color' || format === 'background') {
+                showFTColorPicker(format, btn);
+                return;
+            }
+
+            const sel = quill.getSelection();
+            if (!sel) return;
+
+            if (format === 'link') {
+                const currentLink = quill.getFormat(sel).link;
+                const url = prompt('Enter URL:', currentLink || 'https://');
+                if (url !== null) {
+                    quill.format('link', url || false, 'user');
+                }
+            } else if (format === 'header') {
+                const currentHeader = quill.getFormat(sel).header;
+                const newVal = parseInt(value);
+                quill.format('header', currentHeader === newVal ? false : newVal, 'user');
+            } else if (format === 'list') {
+                const currentList = quill.getFormat(sel).list;
+                quill.format('list', currentList === value ? false : value, 'user');
+            } else if (format === 'blockquote') {
+                const cur = quill.getFormat(sel).blockquote;
+                quill.format('blockquote', !cur, 'user');
+            } else if (format === 'code') {
+                const cur = quill.getFormat(sel).code;
+                quill.format('code', !cur, 'user');
+            } else {
+                const cur = quill.getFormat(sel)[format];
+                quill.format(format, !cur, 'user');
+            }
+
+            updateFTActiveStates();
+        });
+    });
+}
+
+function showFloatingToolbar(range) {
+    const ft = document.getElementById('floating-toolbar');
+    if (!ft || !quill) return;
+
+    const bounds = quill.getBounds(range.index, range.length);
+    const editorRect = quill.root.closest('.ql-container').getBoundingClientRect();
+
+    const top = editorRect.top + bounds.top - ft.offsetHeight - 8;
+    const left = editorRect.left + bounds.left + (bounds.width / 2) - (ft.offsetWidth / 2);
+
+    // Clamp to viewport
+    const clampLeft = Math.max(8, Math.min(left, window.innerWidth - ft.offsetWidth - 8));
+    const clampTop = top < 8 ? editorRect.top + bounds.top + bounds.height + 8 : top;
+
+    ft.style.top = clampTop + 'px';
+    ft.style.left = clampLeft + 'px';
+    ft.style.display = 'flex';
+
+    updateFTActiveStates();
+}
+
+function hideFloatingToolbar() {
+    const ft = document.getElementById('floating-toolbar');
+    if (ft) ft.style.display = 'none';
+
+    const cp = document.getElementById('ft-color-picker');
+    if (cp) cp.style.display = 'none';
+}
+
+function updateFTActiveStates() {
+    const ft = document.getElementById('floating-toolbar');
+    if (!ft || !quill) return;
+    const sel = quill.getSelection();
+    if (!sel) return;
+    const fmt = quill.getFormat(sel);
+
+    ft.querySelectorAll('button[data-format]').forEach(btn => {
+        const format = btn.dataset.format;
+        const value = btn.dataset.value;
+        let active = false;
+
+        if (format === 'header') {
+            active = fmt.header === parseInt(value);
+        } else if (format === 'list') {
+            active = fmt.list === value;
+        } else if (format === 'color' || format === 'background') {
+            active = !!fmt[format];
+        } else {
+            active = !!fmt[format];
+        }
+
+        btn.classList.toggle('ft-active', active);
+    });
+}
+
+// --- Color Picker for floating toolbar ---
+const FT_COLORS = [
+    '#000000', '#434343', '#666666', '#999999', '#cccccc',
+    '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6',
+    '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#84cc16',
+    null // null = remove color
+];
+
+function showFTColorPicker(formatType, anchorBtn) {
+    const picker = document.getElementById('ft-color-picker');
+    const grid = document.getElementById('ft-color-grid');
+    if (!picker || !grid) return;
+
+    grid.innerHTML = '';
+    FT_COLORS.forEach(color => {
+        const swatch = document.createElement('div');
+        swatch.className = 'ft-color-swatch';
+        if (color) {
+            swatch.style.background = color;
+        } else {
+            swatch.style.background = 'var(--bg-editor)';
+            swatch.style.borderColor = 'var(--border)';
+            swatch.title = 'Remove';
+            swatch.innerHTML = '✕';
+            swatch.style.display = 'flex';
+            swatch.style.alignItems = 'center';
+            swatch.style.justifyContent = 'center';
+            swatch.style.fontSize = '10px';
+            swatch.style.color = 'var(--text-muted)';
+        }
+        swatch.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            quill.format(formatType, color, 'user');
+            picker.style.display = 'none';
+        });
+        grid.appendChild(swatch);
+    });
+
+    const rect = anchorBtn.getBoundingClientRect();
+    picker.style.top = (rect.bottom + 4) + 'px';
+    picker.style.left = (rect.left - 40) + 'px';
+    picker.style.display = 'block';
+}
+
+
+// --- Block Handle (+ button on hover) ---
+function initBlockHandle() {
+    const handle = document.getElementById('block-handle');
+    if (!handle || !quill) return;
+
+    const addBtn = handle.querySelector('.block-handle-btn');
+
+    let hoveredLine = -1;
+
+    // Show handle on mousemove over editor
+    quill.root.addEventListener('mousemove', (e) => {
+        const editorRect = quill.root.getBoundingClientRect();
+        const containerRect = quill.root.closest('.ql-container').getBoundingClientRect();
+
+        // Find which block element the mouse is over
+        const y = e.clientY;
+        const blocks = quill.root.querySelectorAll(':scope > *');
+        let found = false;
+
+        for (const block of blocks) {
+            const rect = block.getBoundingClientRect();
+            if (y >= rect.top && y <= rect.bottom) {
+                const handleLeft = containerRect.left + 8;
+                const handleTop = rect.top + (rect.height / 2) - 14;
+
+                handle.style.left = handleLeft + 'px';
+                handle.style.top = handleTop + 'px';
+                handle.classList.add('visible');
+                handle.style.display = 'flex';
+
+                // Store the blot index for insertion
+                const blot = Quill.find(block);
+                if (blot) {
+                    const idx = quill.getIndex(blot);
+                    hoveredLine = idx;
+                }
+
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            handle.classList.remove('visible');
+        }
+    });
+
+    // Hide when mouse leaves editor area
+    quill.root.addEventListener('mouseleave', () => {
+        setTimeout(() => {
+            if (!handle.matches(':hover')) {
+                handle.classList.remove('visible');
+            }
+        }, 300);
+    });
+
+    // + button opens slash menu at that line
+    addBtn.addEventListener('click', () => {
+        if (hoveredLine >= 0) {
+            quill.setSelection(hoveredLine, 0);
+            // Simulate slash: insert `/` and trigger menu
+            quill.insertText(hoveredLine, '/', 'user');
+            slashStartIndex = hoveredLine;
+            openSlashMenu();
+        }
+    });
+
+    // --- Drag and Reorder Blocks ---
+    const dragBtn = handle.querySelector('.block-drag-btn');
+    let draggedBlock = null;
+    let dragPlaceholder = null;
+
+    if (dragBtn) {
+        dragBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            if (hoveredLine < 0) return;
+
+            // Find the block element being dragged
+            const blocks = quill.root.querySelectorAll(':scope > *');
+            for (const block of blocks) {
+                const blot = Quill.find(block);
+                if (blot && quill.getIndex(blot) === hoveredLine) {
+                    draggedBlock = block;
+                    break;
+                }
+            }
+            if (!draggedBlock) return;
+
+            draggedBlock.classList.add('block-dragging');
+            handle.classList.remove('visible');
+
+            const onMouseMove = (moveE) => {
+                const y = moveE.clientY;
+                // Clear previous drop indicators
+                quill.root.querySelectorAll('.block-drag-over').forEach(el => el.classList.remove('block-drag-over'));
+
+                // Find which block we're hovering over
+                const allBlocks = quill.root.querySelectorAll(':scope > *');
+                for (const block of allBlocks) {
+                    if (block === draggedBlock) continue;
+                    const rect = block.getBoundingClientRect();
+                    if (y >= rect.top && y <= rect.bottom) {
+                        const mid = rect.top + rect.height / 2;
+                        if (y < mid) {
+                            block.classList.add('block-drag-over');
+                        } else {
+                            // Show indicator on the next sibling or on this block's bottom
+                            const next = block.nextElementSibling;
+                            if (next && next !== draggedBlock) {
+                                next.classList.add('block-drag-over');
+                            } else {
+                                block.classList.add('block-drag-over');
+                            }
+                        }
+                        dragPlaceholder = block;
+                        break;
+                    }
+                }
+            };
+
+            const onMouseUp = (upE) => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+
+                // Clear visuals
+                if (draggedBlock) draggedBlock.classList.remove('block-dragging');
+                quill.root.querySelectorAll('.block-drag-over').forEach(el => el.classList.remove('block-drag-over'));
+
+                if (!draggedBlock || !dragPlaceholder || draggedBlock === dragPlaceholder) {
+                    draggedBlock = null;
+                    dragPlaceholder = null;
+                    return;
+                }
+
+                // Determine source and target indices in Quill delta
+                const srcBlot = Quill.find(draggedBlock);
+                const dstBlot = Quill.find(dragPlaceholder);
+                if (!srcBlot || !dstBlot) {
+                    draggedBlock = null;
+                    dragPlaceholder = null;
+                    return;
+                }
+
+                const srcIdx = quill.getIndex(srcBlot);
+                const srcLen = srcBlot.length();
+                const dstIdx = quill.getIndex(dstBlot);
+
+                // Get the content of the dragged block
+                const draggedContent = quill.getContents(srcIdx, srcLen);
+
+                // Perform the move: delete source, then insert at destination
+                if (srcIdx < dstIdx) {
+                    // Moving down: insert first, then delete
+                    quill.updateContents({
+                        ops: [
+                            { retain: srcIdx },
+                            { delete: srcLen },
+                        ]
+                    }, 'user');
+                    const adjustedDst = dstIdx - srcLen;
+                    const insertOps = [{ retain: adjustedDst }];
+                    draggedContent.ops.forEach(op => insertOps.push(op));
+                    quill.updateContents({ ops: insertOps }, 'user');
+                } else {
+                    // Moving up: delete first, then insert
+                    quill.updateContents({
+                        ops: [
+                            { retain: srcIdx },
+                            { delete: srcLen },
+                        ]
+                    }, 'user');
+                    const insertOps = [{ retain: dstIdx }];
+                    draggedContent.ops.forEach(op => insertOps.push(op));
+                    quill.updateContents({ ops: insertOps }, 'user');
+                }
+
+                draggedBlock = null;
+                dragPlaceholder = null;
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    }
 }
 
 // Global scanner for markdown code blocks
@@ -953,14 +1907,267 @@ async function init() {
     renderSidebarControls();
     renderItemsList();
 
-    // Select first item or create new
-    const items = DevNotebookDB.getItems(activeProjectId, activeItemType);
-    if (items.length > 0) {
-        setActiveItem(items[0].id);
+    // Initialize bookmark manager
+    initBookmarkManager();
+
+    // Show dashboard on load with browser bookmarks
+    showDashboard();
+}
+
+// --- Dashboard ---
+function showDashboard() {
+    const dashboard = document.getElementById('dashboard');
+    if (!dashboard) return;
+
+    // Hide all editors
+    document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
+    const quillToolbar = document.querySelector('.ql-toolbar');
+    if (quillToolbar) quillToolbar.style.display = 'none';
+
+    // Show dashboard
+    dashboard.classList.add('active');
+    document.body.classList.add('dashboard-mode');
+
+    // Set greeting
+    const hour = new Date().getHours();
+    let greeting = 'Good evening';
+    if (hour < 12) greeting = 'Good morning';
+    else if (hour < 17) greeting = 'Good afternoon';
+    document.getElementById('dashboard-greeting-text').textContent = greeting;
+
+    // Set date
+    const now = new Date();
+    const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    document.getElementById('dashboard-date').textContent = now.toLocaleDateString('en-US', opts);
+
+    // Load browser bookmarks
+    renderBrowserBookmarks();
+}
+
+function hideDashboard() {
+    const dashboard = document.getElementById('dashboard');
+    if (dashboard) dashboard.classList.remove('active');
+}
+
+function renderBrowserBookmarks(folderId) {
+    const grid = document.getElementById('dashboard-bookmark-grid');
+    const backBtn = document.getElementById('dashboard-bookmarks-back');
+    if (!grid) return;
+
+    // Check if chrome.bookmarks API is available
+    if (typeof chrome === 'undefined' || !chrome.bookmarks) {
+        grid.innerHTML = `
+            <div class="bookmark-card-empty">
+                <span class="material-symbols-rounded">bookmark_border</span>
+                Bookmarks API not available.<br>Reload the extension to enable.
+            </div>`;
+        return;
+    }
+
+    const render = (nodes) => {
+        grid.innerHTML = '';
+
+        // Separate folders and links
+        const folders = [];
+        const links = [];
+
+        nodes.forEach(node => {
+            if (node.children) {
+                // It's a folder — only show if it has content
+                if (node.children.length > 0) folders.push(node);
+            } else if (node.url) {
+                links.push(node);
+            }
+        });
+
+        // Show back button if inside a folder
+        if (backBtn) {
+            backBtn.style.display = folderId ? 'flex' : 'none';
+        }
+
+        if (folders.length === 0 && links.length === 0) {
+            grid.innerHTML = `
+                <div class="bookmark-card-empty">
+                    <span class="material-symbols-rounded">bookmark_border</span>
+                    No bookmarks yet
+                </div>`;
+            return;
+        }
+
+        // Render folders first
+        folders.forEach(folder => {
+            const card = document.createElement('div');
+            card.className = 'bookmark-card bookmark-folder-card';
+            const count = countBookmarks(folder);
+            card.innerHTML = `
+                <div class="bookmark-card-favicon bookmark-folder-icon">
+                    <span class="material-symbols-rounded">folder</span>
+                </div>
+                <div class="bookmark-card-info">
+                    <div class="bookmark-card-title">${escapeHtml(folder.title || 'Untitled Folder')}</div>
+                    <div class="bookmark-card-url">${count} item${count !== 1 ? 's' : ''}</div>
+                </div>
+                <span class="material-symbols-rounded bookmark-card-arrow">chevron_right</span>
+            `;
+            card.addEventListener('click', () => {
+                navigateBookmarkFolder(folder.id);
+            });
+            grid.appendChild(card);
+        });
+
+        // Render links
+        links.forEach(link => {
+            const card = document.createElement('a');
+            card.className = 'bookmark-card';
+            card.href = link.url;
+            card.target = '_blank';
+            card.rel = 'noopener';
+            const favicon = getFaviconUrl(link.url);
+            card.innerHTML = `
+                <div class="bookmark-card-favicon">
+                    <img src="${favicon}" alt="">
+                    <span class="material-symbols-rounded" style="display:none;">language</span>
+                </div>
+                <div class="bookmark-card-info">
+                    <div class="bookmark-card-title">${escapeHtml(link.title || link.url)}</div>
+                    <div class="bookmark-card-url">${escapeHtml(getDomain(link.url))}</div>
+                </div>
+            `;
+            // Handle favicon error without inline handler
+            const img = card.querySelector('img');
+            if (img) {
+                img.addEventListener('error', function() {
+                    this.style.display = 'none';
+                    this.nextElementSibling.style.display = 'flex';
+                });
+            }
+            grid.appendChild(card);
+        });
+    };
+
+    if (folderId) {
+        chrome.bookmarks.getChildren(folderId, (children) => {
+            // For each child, if it's a folder, we need to get its subtree to count
+            const processed = [];
+            let pending = children.length;
+            if (pending === 0) { render([]); return; }
+            children.forEach(child => {
+                if (child.url) {
+                    processed.push(child);
+                    pending--;
+                    if (pending === 0) render(processed);
+                } else {
+                    chrome.bookmarks.getSubTree(child.id, (subtree) => {
+                        processed.push(subtree[0]);
+                        pending--;
+                        if (pending === 0) render(processed);
+                    });
+                }
+            });
+        });
     } else {
-        createNewItem();
+        // Get top-level bookmark tree
+        chrome.bookmarks.getTree((tree) => {
+            if (!tree || !tree[0] || !tree[0].children) {
+                render([]);
+                return;
+            }
+            // Root has children like "Bookmarks Bar", "Other Bookmarks", "Mobile Bookmarks"
+            render(tree[0].children);
+        });
     }
 }
+
+function countBookmarks(node) {
+    let count = 0;
+    if (node.url) return 1;
+    if (node.children) {
+        node.children.forEach(c => { count += countBookmarks(c); });
+    }
+    return count;
+}
+
+function getFaviconUrl(url) {
+    try {
+        const u = new URL(url);
+        return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=32`;
+    } catch {
+        return '';
+    }
+}
+
+function getDomain(url) {
+    try {
+        return new URL(url).hostname.replace('www.', '');
+    } catch {
+        return url;
+    }
+}
+
+// Bookmark folder navigation history
+let _bmFolderHistory = [];
+
+function navigateBookmarkFolder(folderId) {
+    _bmFolderHistory.push(folderId);
+    renderBrowserBookmarks(folderId);
+}
+
+function navigateBookmarkBack() {
+    _bmFolderHistory.pop(); // remove current
+    const prev = _bmFolderHistory.length > 0 ? _bmFolderHistory[_bmFolderHistory.length - 1] : undefined;
+    if (prev !== undefined) {
+        renderBrowserBookmarks(prev);
+    } else {
+        _bmFolderHistory = [];
+        renderBrowserBookmarks();
+    }
+}
+
+// Wire back button
+document.getElementById('dashboard-bookmarks-back')?.addEventListener('click', navigateBookmarkBack);
+
+// Dashboard: New Folder button (creates a Chrome bookmark folder)
+document.getElementById('dashboard-add-folder-btn')?.addEventListener('click', () => {
+    const name = prompt('New folder name:');
+    if (!name || !name.trim()) return;
+
+    if (typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.create) {
+        // Determine parent: if browsing inside a folder, create there; otherwise in Bookmarks Bar
+        const parentId = _bmFolderHistory.length > 0
+            ? _bmFolderHistory[_bmFolderHistory.length - 1]
+            : '1'; // '1' = Bookmarks Bar
+        chrome.bookmarks.create({ parentId, title: name.trim() }, () => {
+            // Re-render current view
+            const currentFolderId = _bmFolderHistory.length > 0
+                ? _bmFolderHistory[_bmFolderHistory.length - 1]
+                : undefined;
+            renderBrowserBookmarks(currentFolderId);
+        });
+    } else {
+        // Fallback: also create in internal bookmark manager
+        bmCreateFolder();
+    }
+});
+
+// Brand click -> show dashboard
+document.getElementById('sidebar-brand-btn')?.addEventListener('click', () => {
+    activeItemId = null;
+    selectedItemIds.clear();
+    renderItemsList();
+    showDashboard();
+});
+
+// Dashboard quick actions
+document.getElementById('dashboard-new-note')?.addEventListener('click', () => {
+    activeItemType = 'note';
+    resourceTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.type === 'note'));
+    renderItemsList();
+    createNewItem();
+});
+
+document.getElementById('dashboard-open-sidebar')?.addEventListener('click', () => {
+    appContainer.classList.add('sidebar-open');
+});
 
 // --- Data Persistence ---
 function saveWorkspaces() {
@@ -1004,6 +2211,7 @@ function getItem(id) {
     } else if (row.type === 'bookmark') {
         item.url = row.url || '';
         item.description = row.description || '';
+        item.folder_id = row.folder_id || '';
     } else if (row.type === 'credential') {
         item.username = row.username || '';
         item.password = row.password || '';
@@ -1077,7 +2285,7 @@ function renderItemsList() {
 
         const openLinkBtn = item.type === 'bookmark' || item.type === 'draw' ? `
             <button class="note-item-open-link-btn" title="Open">
-                <span class="material-icons">open_in_new</span>
+                <span class="material-symbols-rounded">open_in_new</span>
             </button>
         ` : '';
 
@@ -1088,7 +2296,7 @@ function renderItemsList() {
             </div>
             ${openLinkBtn}
             <button class="note-item-delete-btn" title="Delete">
-                <span class="material-icons">close</span>
+                <span class="material-symbols-rounded">close</span>
             </button>
         `;
 
@@ -1218,24 +2426,23 @@ function openItemEditor(id, { openDraw = false } = {}) {
     // Logic extracted from setActiveItem to just switch view without resetting list state
     const item = getItem(id);
     document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
+    // Hide dashboard when editing an item
+    const dashboard = document.getElementById('dashboard');
+    if (dashboard) dashboard.classList.remove('active');
+    document.body.classList.remove('dashboard-mode');
 
     if (!item) return;
 
-    // Get the Quill toolbar element
-    const quillToolbar = document.querySelector('.ql-toolbar');
-
     if (item.type === 'note') {
         document.getElementById('editor-content').classList.remove('hidden');
-        // Show toolbar for notes
-        if (quillToolbar) {
-            quillToolbar.style.display = 'block';
-        }
+        // Restore Quill toolbar (hidden by dashboard)
+        const quillToolbar = document.querySelector('.ql-toolbar');
+        if (quillToolbar) quillToolbar.style.display = '';
         noteTitleEl.value = item.title || '';
         if (quill) {
-            // ... (reuse existing quill set logic)
             if (item.body && typeof item.body === 'object' && item.body.ops) {
                 quill.setContents(item.body);
-            } else if (item.body && item.body.startsWith('{')) {
+            } else if (item.body && typeof item.body === 'string' && item.body.startsWith('{')) {
                 try {
                     const delta = JSON.parse(item.body);
                     quill.setContents(delta);
@@ -1243,31 +2450,36 @@ function openItemEditor(id, { openDraw = false } = {}) {
             } else {
                 quill.setText(item.body || '');
             }
+            // Focus title for new/empty notes, otherwise focus editor
+            setTimeout(() => {
+                if (!item.title && (!item.body || item.body === '')) {
+                    noteTitleEl.focus();
+                } else {
+                    quill.focus();
+                    const len = quill.getLength();
+                    quill.setSelection(Math.max(0, len - 1), 0);
+                }
+                // Re-attach table action handlers for loaded content
+                if (typeof attachTableActionHandlers === 'function') {
+                    attachTableActionHandlers();
+                }
+            }, 50);
         }
     } else if (item.type === 'bookmark') {
         bookmarkEditor.classList.remove('hidden');
-        // Hide toolbar for bookmarks
-        if (quillToolbar) {
-            quillToolbar.style.display = 'none';
+        // Open the bookmark manager view with folder tree
+        bmOpenManager();
+        // If a specific bookmark was selected, open its edit form
+        if (item.url || item.title) {
+            bmShowForm(item.id);
         }
-        bookmarkTitleInput.value = item.title || '';
-        bookmarkUrlInput.value = item.url || '';
-        bookmarkDescInput.value = item.description || '';
     } else if (item.type === 'credential') {
         credentialEditor.classList.remove('hidden');
-        // Hide toolbar for credentials
-        if (quillToolbar) {
-            quillToolbar.style.display = 'none';
-        }
         credentialTitleInput.value = item.title || '';
         credentialUsernameInput.value = item.username || '';
         credentialPasswordInput.value = item.password || '';
         credentialNotesInput.value = item.notes || '';
     } else if (item.type === 'draw') {
-        // Hide toolbar for non-note types
-        if (quillToolbar) {
-            quillToolbar.style.display = 'none';
-        }
         if (openDraw) {
             openDrawView(false, item.drawUrl || getDrawCollabLinkUrl(true));
         }
@@ -1314,8 +2526,16 @@ function createNewItem() {
     if (activeItemType === 'note') {
         newItem.body = '';
     } else if (activeItemType === 'bookmark') {
-        newItem.url = '';
-        newItem.description = '';
+        // Don't create an empty bookmark item. Instead show the bookmark manager form.
+        // We still need to show the bookmark-editor pane.
+        document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
+        const dashboard = document.getElementById('dashboard');
+        if (dashboard) dashboard.classList.remove('active');
+        document.body.classList.remove('dashboard-mode');
+        bookmarkEditor.classList.remove('hidden');
+        bmOpenManager();
+        bmShowForm(null); // Open "Add Bookmark" form
+        return;
     } else if (activeItemType === 'credential') {
         newItem.username = '';
         newItem.password = '';
@@ -1540,26 +2760,450 @@ deleteProjectBtn.addEventListener('click', async () => {
 addItemBtn.addEventListener('click', createNewItem);
 fabAddBtn.addEventListener('click', createNewItem);
 
-// Bookmark Save
-saveBookmarkBtn.addEventListener('click', () => {
-    if (activeItemId) {
-        const item = getItem(activeItemId);
-        if (item && item.type === 'bookmark') {
-            DevNotebookDB.updateItem(activeItemId, {
-                title: bookmarkTitleInput.value,
-                url: bookmarkUrlInput.value,
-                description: bookmarkDescInput.value
-            });
-            renderItemsList();
-            showNotification('Bookmark saved');
+// ==========================================
+// BOOKMARK MANAGER
+// ==========================================
+let bmCurrentFolderId = ''; // '' = all / unfiled
+let bmEditingItemId = null; // item being edited in the form
+
+function initBookmarkManager() {
+    const addFolderBtn = document.getElementById('bm-add-folder-btn');
+    const addBookmarkBtn = document.getElementById('bm-add-bookmark-btn');
+    const syncBrowserBtn = document.getElementById('bm-sync-browser-btn');
+    const closeFormBtn = document.getElementById('bm-close-form-btn');
+    const cancelFormBtn = document.getElementById('bm-cancel-form-btn');
+
+    if (addFolderBtn) addFolderBtn.addEventListener('click', bmCreateFolder);
+    if (addBookmarkBtn) addBookmarkBtn.addEventListener('click', () => bmShowForm(null));
+    if (syncBrowserBtn) syncBrowserBtn.addEventListener('click', bmSyncToBrowser);
+    if (closeFormBtn) closeFormBtn.addEventListener('click', bmHideForm);
+    if (cancelFormBtn) cancelFormBtn.addEventListener('click', bmHideForm);
+
+    if (saveBookmarkBtn) saveBookmarkBtn.addEventListener('click', bmSaveBookmark);
+    if (visitBookmarkBtn) visitBookmarkBtn.addEventListener('click', () => {
+        const url = bookmarkUrlInput.value;
+        if (url) window.open(url, '_blank');
+    });
+}
+
+function bmOpenManager() {
+    bmCurrentFolderId = '';
+    bmRenderFolders();
+    bmRenderBookmarks();
+    bmHideForm();
+}
+
+function bmCreateFolder() {
+    const name = prompt('Folder name:');
+    if (!name || !name.trim()) return;
+    if (!activeProjectId) return;
+
+    const folder = {
+        id: 'bmf_' + Date.now(),
+        project_id: activeProjectId,
+        name: name.trim(),
+        parent_id: bmCurrentFolderId || null,
+        sort_order: 0,
+        created: new Date().toISOString()
+    };
+
+    DevNotebookDB.createBookmarkFolder(folder);
+
+    // Sync to browser: create folder in Chrome bookmarks
+    if (typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.create) {
+        const parentChromeId = bmGetChromeParentId();
+        chrome.bookmarks.create({
+            parentId: parentChromeId,
+            title: name.trim()
+        }, (created) => {
+            if (created) {
+                DevNotebookDB.updateBookmarkFolder(folder.id, { chrome_id: created.id });
+            }
+        });
+    }
+
+    bmRenderFolders();
+    showNotification('Folder created');
+}
+
+function bmGetChromeParentId() {
+    // Get the Chrome bookmark folder ID for the current folder
+    if (bmCurrentFolderId) {
+        const folder = DevNotebookDB.getBookmarkFolder(bmCurrentFolderId);
+        if (folder && folder.chrome_id) return folder.chrome_id;
+    }
+    return '1'; // '1' = Bookmarks Bar in Chrome
+}
+
+function bmRenameFolder(folderId) {
+    const folder = DevNotebookDB.getBookmarkFolder(folderId);
+    if (!folder) return;
+    const name = prompt('Rename folder:', folder.name);
+    if (name === null || !name.trim()) return;
+
+    DevNotebookDB.updateBookmarkFolder(folderId, { name: name.trim() });
+
+    // Sync rename to Chrome
+    if (folder.chrome_id && typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.update) {
+        chrome.bookmarks.update(folder.chrome_id, { title: name.trim() });
+    }
+
+    bmRenderFolders();
+    showNotification('Folder renamed');
+}
+
+function bmDeleteFolder(folderId) {
+    if (!confirm('Delete this folder? Bookmarks inside will be moved to "All Bookmarks".')) return;
+
+    const folder = DevNotebookDB.getBookmarkFolder(folderId);
+
+    // Remove from Chrome
+    if (folder && folder.chrome_id && typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.removeTree) {
+        try { chrome.bookmarks.removeTree(folder.chrome_id); } catch(e) {}
+    }
+
+    DevNotebookDB.deleteBookmarkFolder(folderId);
+
+    if (bmCurrentFolderId === folderId) {
+        bmCurrentFolderId = '';
+    }
+
+    bmRenderFolders();
+    bmRenderBookmarks();
+    showNotification('Folder deleted');
+}
+
+function bmRenderFolders() {
+    const list = document.getElementById('bm-folder-list');
+    if (!list || !activeProjectId) return;
+
+    const folders = DevNotebookDB.getAllBookmarkFolders(activeProjectId);
+    const folderName = document.getElementById('bm-current-folder-name');
+
+    // Build HTML
+    let html = `
+        <div class="bm-folder-item ${bmCurrentFolderId === '' ? 'active' : ''}" data-folder-id="">
+            <span class="material-symbols-rounded">folder_open</span>
+            <span>All Bookmarks</span>
+        </div>`;
+
+    folders.forEach(f => {
+        const isActive = bmCurrentFolderId === f.id;
+        const items = DevNotebookDB.getBookmarksByFolder(activeProjectId, f.id);
+        html += `
+            <div class="bm-folder-item ${isActive ? 'active' : ''}" data-folder-id="${f.id}">
+                <span class="material-symbols-rounded">${isActive ? 'folder_open' : 'folder'}</span>
+                <span>${escapeHtml(f.name)}</span>
+                <span class="bm-folder-count">${items.length}</span>
+                <div class="bm-folder-actions">
+                    <button data-action="rename" data-folder-id="${f.id}" title="Rename">
+                        <span class="material-symbols-rounded">edit</span>
+                    </button>
+                    <button data-action="delete" data-folder-id="${f.id}" title="Delete">
+                        <span class="material-symbols-rounded">delete</span>
+                    </button>
+                </div>
+            </div>`;
+    });
+
+    list.innerHTML = html;
+
+    // Update title
+    if (folderName) {
+        if (bmCurrentFolderId) {
+            const cf = DevNotebookDB.getBookmarkFolder(bmCurrentFolderId);
+            folderName.textContent = cf ? cf.name : 'Bookmarks';
+        } else {
+            folderName.textContent = 'All Bookmarks';
         }
     }
-});
 
-visitBookmarkBtn.addEventListener('click', () => {
-    const url = bookmarkUrlInput.value;
-    if (url) window.open(url, '_blank');
-});
+    // Click handlers
+    list.querySelectorAll('.bm-folder-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            if (e.target.closest('.bm-folder-actions')) return;
+            bmCurrentFolderId = item.dataset.folderId;
+            bmRenderFolders();
+            bmRenderBookmarks();
+        });
+    });
+
+    // Folder action handlers (rename/delete)
+    list.querySelectorAll('.bm-folder-actions button[data-action]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const fId = btn.dataset.folderId;
+            if (btn.dataset.action === 'rename') bmRenameFolder(fId);
+            else if (btn.dataset.action === 'delete') bmDeleteFolder(fId);
+        });
+    });
+
+    // Also update folder select in form
+    bmUpdateFolderSelect();
+}
+
+function bmUpdateFolderSelect() {
+    const select = document.getElementById('bookmark-folder-select');
+    if (!select || !activeProjectId) return;
+
+    const folders = DevNotebookDB.getAllBookmarkFolders(activeProjectId);
+    select.innerHTML = '<option value="">No Folder</option>';
+    folders.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = f.name;
+        select.appendChild(opt);
+    });
+}
+
+function bmRenderBookmarks() {
+    const list = document.getElementById('bm-list');
+    if (!list || !activeProjectId) return;
+
+    let bookmarks;
+    if (bmCurrentFolderId === '') {
+        // Show all bookmarks
+        bookmarks = DevNotebookDB.getItems(activeProjectId, 'bookmark');
+    } else {
+        bookmarks = DevNotebookDB.getBookmarksByFolder(activeProjectId, bmCurrentFolderId);
+    }
+
+    if (bookmarks.length === 0) {
+        list.innerHTML = `
+            <div class="bm-empty">
+                <span class="material-symbols-rounded">bookmark_border</span>
+                No bookmarks yet.<br>Click "Add Bookmark" to create one.
+            </div>`;
+        return;
+    }
+
+    let html = '';
+    bookmarks.forEach(bm => {
+        const favicon = bm.url ? getFaviconUrl(bm.url) : '';
+        const domain = bm.url ? getDomain(bm.url) : '';
+        html += `
+            <div class="bm-card" data-id="${bm.id}">
+                <div class="bm-card-favicon">
+                    ${favicon ? `<img src="${favicon}" alt="">` : ''}
+                    <span class="material-symbols-rounded" ${favicon ? 'style="display:none"' : ''}>language</span>
+                </div>
+                <div class="bm-card-info">
+                    <div class="bm-card-title">${escapeHtml(bm.title || 'Untitled')}</div>
+                    <div class="bm-card-url">${escapeHtml(domain)}</div>
+                    ${bm.description ? `<div class="bm-card-desc">${escapeHtml(bm.description)}</div>` : ''}
+                </div>
+                <div class="bm-card-actions">
+                    <button data-action="open" data-url="${escapeHtml(bm.url || '')}" title="Open">
+                        <span class="material-symbols-rounded">open_in_new</span>
+                    </button>
+                    <button data-action="edit" data-item-id="${bm.id}" title="Edit">
+                        <span class="material-symbols-rounded">edit</span>
+                    </button>
+                    <button class="danger" data-action="delete" data-item-id="${bm.id}" title="Delete">
+                        <span class="material-symbols-rounded">delete</span>
+                    </button>
+                </div>
+            </div>`;
+    });
+
+    list.innerHTML = html;
+
+    // Handle favicon errors
+    list.querySelectorAll('.bm-card-favicon img').forEach(img => {
+        img.addEventListener('error', function() {
+            this.style.display = 'none';
+        });
+    });
+
+    // Bookmark card action handlers (event delegation)
+    list.querySelectorAll('.bm-card-actions button[data-action]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const action = btn.dataset.action;
+            if (action === 'open') window.open(btn.dataset.url, '_blank');
+            else if (action === 'edit') bmShowForm(btn.dataset.itemId);
+            else if (action === 'delete') bmDeleteBookmark(btn.dataset.itemId);
+        });
+    });
+
+    // Click on card → open URL
+    list.querySelectorAll('.bm-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.bm-card-actions')) return;
+            const id = card.dataset.id;
+            const item = getItem(id);
+            if (item && item.url) window.open(item.url, '_blank');
+        });
+    });
+}
+
+function bmShowForm(editId) {
+    const form = document.getElementById('bm-edit-form');
+    const title = document.getElementById('bm-form-title');
+    if (!form) return;
+
+    bmEditingItemId = editId;
+
+    if (editId) {
+        // Editing existing bookmark
+        title.textContent = 'Edit Bookmark';
+        const item = getItem(editId);
+        if (item) {
+            bookmarkTitleInput.value = item.title || '';
+            bookmarkUrlInput.value = item.url || '';
+            bookmarkDescInput.value = item.description || '';
+            const folderSelect = document.getElementById('bookmark-folder-select');
+            if (folderSelect) folderSelect.value = item.folder_id || '';
+        }
+    } else {
+        // New bookmark
+        title.textContent = 'Add Bookmark';
+        bookmarkTitleInput.value = '';
+        bookmarkUrlInput.value = '';
+        bookmarkDescInput.value = '';
+        const folderSelect = document.getElementById('bookmark-folder-select');
+        if (folderSelect) folderSelect.value = bmCurrentFolderId || '';
+    }
+
+    bmUpdateFolderSelect();
+    form.style.display = 'block';
+    setTimeout(() => bookmarkTitleInput.focus(), 50);
+}
+
+function bmHideForm() {
+    const form = document.getElementById('bm-edit-form');
+    if (form) form.style.display = 'none';
+    bmEditingItemId = null;
+}
+
+function bmSaveBookmark() {
+    const title = bookmarkTitleInput.value.trim();
+    const url = bookmarkUrlInput.value.trim();
+    const desc = bookmarkDescInput.value.trim();
+    const folderSelect = document.getElementById('bookmark-folder-select');
+    const folderId = folderSelect ? folderSelect.value : '';
+
+    if (!url) {
+        showNotification('URL is required');
+        return;
+    }
+
+    if (bmEditingItemId) {
+        // Update existing
+        DevNotebookDB.updateItem(bmEditingItemId, {
+            title: title || url,
+            url: url,
+            description: desc,
+            folder_id: folderId || null
+        });
+        showNotification('Bookmark updated');
+    } else {
+        // Create new
+        if (!activeProjectId) return;
+        const newItem = {
+            id: 'bm_' + Date.now(),
+            project_id: activeProjectId,
+            type: 'bookmark',
+            title: title || url,
+            url: url,
+            description: desc,
+            folder_id: folderId || null,
+            created: new Date().toISOString()
+        };
+        DevNotebookDB.createItem(newItem);
+
+        // Sync to Chrome bookmarks
+        if (typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.create) {
+            let parentChromeId = '1'; // Bookmarks Bar
+            if (folderId) {
+                const folder = DevNotebookDB.getBookmarkFolder(folderId);
+                if (folder && folder.chrome_id) parentChromeId = folder.chrome_id;
+            }
+            chrome.bookmarks.create({
+                parentId: parentChromeId,
+                title: title || url,
+                url: url
+            });
+        }
+
+        showNotification('Bookmark created');
+    }
+
+    bmHideForm();
+    bmRenderBookmarks();
+    bmRenderFolders();
+    renderItemsList();
+}
+
+function bmDeleteBookmark(id) {
+    if (!confirm('Delete this bookmark?')) return;
+    DevNotebookDB.deleteItem(id);
+    bmRenderBookmarks();
+    bmRenderFolders();
+    renderItemsList();
+    showNotification('Bookmark deleted');
+}
+
+function bmSyncToBrowser() {
+    if (typeof chrome === 'undefined' || !chrome.bookmarks || !chrome.bookmarks.create) {
+        showNotification('Chrome Bookmarks API not available');
+        return;
+    }
+
+    if (!activeProjectId) return;
+
+    const allBookmarks = DevNotebookDB.getItems(activeProjectId, 'bookmark');
+    const folders = DevNotebookDB.getAllBookmarkFolders(activeProjectId);
+
+    // Create a parent folder in bookmarks bar for this sync
+    chrome.bookmarks.create({
+        parentId: '1',
+        title: 'Notebook Bookmarks'
+    }, (rootFolder) => {
+        if (!rootFolder) return;
+
+        // Create folders first
+        const folderMap = {}; // local ID → chrome ID
+        let pending = folders.length;
+
+        if (pending === 0) {
+            syncBookmarkItems(rootFolder.id, folderMap);
+            return;
+        }
+
+        folders.forEach(f => {
+            const parentId = f.parent_id && folderMap[f.parent_id] ? folderMap[f.parent_id] : rootFolder.id;
+            chrome.bookmarks.create({
+                parentId: parentId,
+                title: f.name
+            }, (created) => {
+                if (created) {
+                    folderMap[f.id] = created.id;
+                    DevNotebookDB.updateBookmarkFolder(f.id, { chrome_id: created.id });
+                }
+                pending--;
+                if (pending === 0) {
+                    syncBookmarkItems(rootFolder.id, folderMap);
+                }
+            });
+        });
+    });
+
+    function syncBookmarkItems(rootChromeId, folderMap) {
+        allBookmarks.forEach(bm => {
+            const parentId = bm.folder_id && folderMap[bm.folder_id] ? folderMap[bm.folder_id] : rootChromeId;
+            chrome.bookmarks.create({
+                parentId: parentId,
+                title: bm.title || bm.url,
+                url: bm.url
+            });
+        });
+        showNotification(`Synced ${allBookmarks.length} bookmarks to browser`);
+    }
+}
+
+// Initialize bookmark manager when bookmark view is opened
+// (called from openItemEditor)
 
 // Credential Save
 saveCredentialBtn.addEventListener('click', () => {
@@ -1911,7 +3555,7 @@ function renderTodoList() {
             <input type="checkbox" ${todo.completed ? 'checked' : ''}>
             <span>${escapeHtml(todo.text)}${dateInfo}</span>
             <button class="delete-todo-btn">
-                <span class="material-icons" style="font-size: 16px;">close</span>
+                <span class="material-symbols-rounded" style="font-size: 16px;">close</span>
             </button>
         `;
 
@@ -1956,13 +3600,13 @@ function renderHistoryList() {
         });
 
         li.innerHTML = `
-            <span class="material-icons" style="color: var(--accent); font-size: 18px;">check_circle</span>
+            <span class="material-symbols-rounded" style="color: var(--accent); font-size: 18px;">check_circle</span>
             <div style="flex: 1;">
                 <div>${escapeHtml(todo.text)}</div>
                 <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 2px;">${dateStr}</div>
             </div>
             <button class="delete-todo-btn" title="Remove from history">
-                <span class="material-icons" style="font-size: 16px;">close</span>
+                <span class="material-symbols-rounded" style="font-size: 16px;">close</span>
             </button>
         `;
 
@@ -2620,7 +4264,7 @@ function renderSnippetsList() {
             <input type="text" class="snippet-text" value="${snippet.text}" placeholder="Snippet text">
             <input type="text" class="snippet-description" value="${snippet.description}" placeholder="Description">
             <button class="remove-snippet-btn" title="Remove">
-                <span class="material-icons" style="font-size: 18px;">delete</span>
+                <span class="material-symbols-rounded" style="font-size: 18px;">delete</span>
             </button>
         </div>
     `).join('');
@@ -3105,7 +4749,7 @@ if (aiGenerateBtn) {
         aiError.classList.add('hidden');
         aiPreviewSection.classList.add('hidden');
         aiGenerateBtn.disabled = true;
-        // aiGenerateBtn.innerHTML = '<span class="material-icons spin">refresh</span>'; // Optional: change icon while loading
+        // aiGenerateBtn.innerHTML = '<span class="material-symbols-rounded spin">refresh</span>'; // Optional: change icon while loading
 
         try {
             const outputType = document.getElementById('ai-type-select').value;
@@ -3287,7 +4931,7 @@ if (aiGenerateBtn) {
             aiLoading.classList.add('hidden');
             if (aiStopBtn) aiStopBtn.classList.add('hidden');
             aiGenerateBtn.disabled = false;
-            // aiGenerateBtn.innerHTML = '<span class="material-icons">arrow_upward</span>'; // Restore icon
+            // aiGenerateBtn.innerHTML = '<span class="material-symbols-rounded">arrow_upward</span>'; // Restore icon
         }
     });
 }
@@ -4182,7 +5826,7 @@ function renderChatAttachments() {
         return `
             <div class="chat-attachment-item">
                 ${mediaTag}
-                <span class="chat-attachment-remove material-icons" data-index="${index}">close</span>
+                <span class="chat-attachment-remove material-symbols-rounded" data-index="${index}">close</span>
             </div>
         `;
     }).join('');

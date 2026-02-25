@@ -7,7 +7,7 @@ const DevNotebookDB = (() => {
     const IDB_NAME = 'DevNotebookSQLite';
     const IDB_STORE = 'database';
     const IDB_KEY = 'main';
-    const SCHEMA_VERSION = 1;
+    const SCHEMA_VERSION = 2;
 
     let db = null;
     let _ready = null;
@@ -92,7 +92,27 @@ const DevNotebookDB = (() => {
             CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);
             CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id);
             CREATE INDEX IF NOT EXISTS idx_items_type ON items(project_id, type);
+
+            CREATE TABLE IF NOT EXISTS bookmark_folders (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                parent_id TEXT,
+                sort_order INTEGER DEFAULT 0,
+                created TEXT,
+                chrome_id TEXT,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_bookmark_folders_project ON bookmark_folders(project_id);
         `);
+
+        // Migration: add folder_id column to items if it doesn't exist
+        try {
+            db.run('ALTER TABLE items ADD COLUMN folder_id TEXT');
+        } catch(e) {
+            // Column already exists, ignore
+        }
+
         _setSetting('schema_version', SCHEMA_VERSION);
         _schedulePersist();
     }
@@ -334,8 +354,8 @@ const DevNotebookDB = (() => {
     function createItem(item) {
         const body = item.body ? (typeof item.body === 'string' ? item.body : JSON.stringify(item.body)) : null;
         _run(
-            `INSERT INTO items(id, project_id, type, title, created, body, url, description, username, password, notes, draw_url, sort_order)
-             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO items(id, project_id, type, title, created, body, url, description, username, password, notes, draw_url, sort_order, folder_id)
+             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 item.id,
                 item.project_id || item.projectId,
@@ -349,13 +369,14 @@ const DevNotebookDB = (() => {
                 item.password || null,
                 item.notes || null,
                 item.draw_url || item.drawUrl || null,
-                item.sort_order || 0
+                item.sort_order || 0,
+                item.folder_id || null
             ]
         );
     }
 
     function updateItem(id, changes) {
-        const allowed = ['title', 'body', 'url', 'description', 'username', 'password', 'notes', 'draw_url', 'sort_order'];
+        const allowed = ['title', 'body', 'url', 'description', 'username', 'password', 'notes', 'draw_url', 'sort_order', 'folder_id'];
         const sets = [];
         const params = [];
         for (const [k, v] of Object.entries(changes)) {
@@ -635,6 +656,87 @@ const DevNotebookDB = (() => {
         return _persistAsync();
     }
 
+    // ── Bookmark Folders ────────────────────────────────────────────
+
+    function getBookmarkFolders(projectId, parentId = null) {
+        if (parentId) {
+            return _queryAll(
+                'SELECT * FROM bookmark_folders WHERE project_id = ? AND parent_id = ? ORDER BY sort_order ASC, rowid ASC',
+                [projectId, parentId]
+            );
+        }
+        return _queryAll(
+            'SELECT * FROM bookmark_folders WHERE project_id = ? AND (parent_id IS NULL OR parent_id = \'\') ORDER BY sort_order ASC, rowid ASC',
+            [projectId]
+        );
+    }
+
+    function getAllBookmarkFolders(projectId) {
+        return _queryAll(
+            'SELECT * FROM bookmark_folders WHERE project_id = ? ORDER BY sort_order ASC, rowid ASC',
+            [projectId]
+        );
+    }
+
+    function getBookmarkFolder(id) {
+        return _queryOne('SELECT * FROM bookmark_folders WHERE id = ?', [id]);
+    }
+
+    function createBookmarkFolder(folder) {
+        _run(
+            `INSERT INTO bookmark_folders(id, project_id, name, parent_id, sort_order, created, chrome_id)
+             VALUES(?, ?, ?, ?, ?, ?, ?)`,
+            [
+                folder.id,
+                folder.project_id,
+                folder.name,
+                folder.parent_id || null,
+                folder.sort_order || 0,
+                folder.created || new Date().toISOString(),
+                folder.chrome_id || null
+            ]
+        );
+    }
+
+    function updateBookmarkFolder(id, changes) {
+        const allowed = ['name', 'parent_id', 'sort_order', 'chrome_id'];
+        const sets = [];
+        const params = [];
+        for (const [k, v] of Object.entries(changes)) {
+            if (allowed.includes(k)) {
+                sets.push(`${k} = ?`);
+                params.push(v);
+            }
+        }
+        if (sets.length === 0) return;
+        params.push(id);
+        _run(`UPDATE bookmark_folders SET ${sets.join(', ')} WHERE id = ?`, params);
+    }
+
+    function deleteBookmarkFolder(id) {
+        // Move items in this folder to unfiled
+        _run('UPDATE items SET folder_id = NULL WHERE folder_id = ?', [id]);
+        // Move child folders to parent
+        const folder = getBookmarkFolder(id);
+        const parentId = folder ? folder.parent_id : null;
+        _run('UPDATE bookmark_folders SET parent_id = ? WHERE parent_id = ?', [parentId, id]);
+        _run('DELETE FROM bookmark_folders WHERE id = ?', [id]);
+    }
+
+    function getBookmarksByFolder(projectId, folderId) {
+        if (folderId) {
+            return _queryAll(
+                'SELECT id, project_id, type, title, created, url, description, folder_id, sort_order FROM items WHERE project_id = ? AND type = \'bookmark\' AND folder_id = ? ORDER BY sort_order DESC, rowid DESC',
+                [projectId, folderId]
+            );
+        }
+        // Unfiled bookmarks (no folder)
+        return _queryAll(
+            'SELECT id, project_id, type, title, created, url, description, folder_id, sort_order FROM items WHERE project_id = ? AND type = \'bookmark\' AND (folder_id IS NULL OR folder_id = \'\') ORDER BY sort_order DESC, rowid DESC',
+            [projectId]
+        );
+    }
+
     // ── Public API ──────────────────────────────────────────────────
 
     return {
@@ -685,6 +787,15 @@ const DevNotebookDB = (() => {
         setSetting,
         getSettings,
         setSettings,
+
+        // Bookmark Folders
+        getBookmarkFolders,
+        getAllBookmarkFolders,
+        getBookmarkFolder,
+        createBookmarkFolder,
+        updateBookmarkFolder,
+        deleteBookmarkFolder,
+        getBookmarksByFolder,
 
         // Export
         exportAll
