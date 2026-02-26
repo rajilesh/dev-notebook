@@ -1940,6 +1940,9 @@ function showDashboard() {
     const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
     document.getElementById('dashboard-date').textContent = now.toLocaleDateString('en-US', opts);
 
+    // Load local bookmarks
+    renderDashboardBookmarks();
+
     // Load browser bookmarks
     renderBrowserBookmarks();
 }
@@ -1949,142 +1952,404 @@ function hideDashboard() {
     if (dashboard) dashboard.classList.remove('active');
 }
 
-function renderBrowserBookmarks(folderId) {
+function renderDashboardBookmarks(folderId) {
     const grid = document.getElementById('dashboard-bookmark-grid');
     const backBtn = document.getElementById('dashboard-bookmarks-back');
     if (!grid) return;
 
-    // Check if chrome.bookmarks API is available
-    if (typeof chrome === 'undefined' || !chrome.bookmarks) {
+    if (!activeProjectId) {
         grid.innerHTML = `
             <div class="bookmark-card-empty">
                 <span class="material-symbols-rounded">bookmark_border</span>
-                Bookmarks API not available.<br>Reload the extension to enable.
+                Select a project to see bookmarks.
             </div>`;
         return;
     }
 
-    const render = (nodes) => {
-        grid.innerHTML = '';
-
-        // Separate folders and links
-        const folders = [];
-        const links = [];
-
-        nodes.forEach(node => {
-            if (node.children) {
-                // It's a folder — only show if it has content
-                if (node.children.length > 0) folders.push(node);
-            } else if (node.url) {
-                links.push(node);
-            }
-        });
-
-        // Show back button if inside a folder
-        if (backBtn) {
-            backBtn.style.display = folderId ? 'flex' : 'none';
-        }
-
-        if (folders.length === 0 && links.length === 0) {
-            grid.innerHTML = `
-                <div class="bookmark-card-empty">
-                    <span class="material-symbols-rounded">bookmark_border</span>
-                    No bookmarks yet
-                </div>`;
-            return;
-        }
-
-        // Render folders first
-        folders.forEach(folder => {
-            const card = document.createElement('div');
-            card.className = 'bookmark-card bookmark-folder-card';
-            const count = countBookmarks(folder);
-            card.innerHTML = `
-                <div class="bookmark-card-favicon bookmark-folder-icon">
-                    <span class="material-symbols-rounded">folder</span>
-                </div>
-                <div class="bookmark-card-info">
-                    <div class="bookmark-card-title">${escapeHtml(folder.title || 'Untitled Folder')}</div>
-                    <div class="bookmark-card-url">${count} item${count !== 1 ? 's' : ''}</div>
-                </div>
-                <span class="material-symbols-rounded bookmark-card-arrow">chevron_right</span>
-            `;
-            card.addEventListener('click', () => {
-                navigateBookmarkFolder(folder.id);
-            });
-            grid.appendChild(card);
-        });
-
-        // Render links
-        links.forEach(link => {
-            const card = document.createElement('a');
-            card.className = 'bookmark-card';
-            card.href = link.url;
-            card.target = '_blank';
-            card.rel = 'noopener';
-            const favicon = getFaviconUrl(link.url);
-            card.innerHTML = `
-                <div class="bookmark-card-favicon">
-                    <img src="${favicon}" alt="">
-                    <span class="material-symbols-rounded" style="display:none;">language</span>
-                </div>
-                <div class="bookmark-card-info">
-                    <div class="bookmark-card-title">${escapeHtml(link.title || link.url)}</div>
-                    <div class="bookmark-card-url">${escapeHtml(getDomain(link.url))}</div>
-                </div>
-            `;
-            // Handle favicon error without inline handler
-            const img = card.querySelector('img');
-            if (img) {
-                img.addEventListener('error', function() {
-                    this.style.display = 'none';
-                    this.nextElementSibling.style.display = 'flex';
-                });
-            }
-            grid.appendChild(card);
-        });
-    };
-
+    // Get folders and bookmarks from local DB
+    const parentFolderId = folderId || null;
+    const folders = DevNotebookDB.getBookmarkFolders(activeProjectId, parentFolderId);
+    let bookmarks;
     if (folderId) {
-        chrome.bookmarks.getChildren(folderId, (children) => {
-            // For each child, if it's a folder, we need to get its subtree to count
-            const processed = [];
-            let pending = children.length;
-            if (pending === 0) { render([]); return; }
-            children.forEach(child => {
-                if (child.url) {
-                    processed.push(child);
-                    pending--;
-                    if (pending === 0) render(processed);
-                } else {
-                    chrome.bookmarks.getSubTree(child.id, (subtree) => {
-                        processed.push(subtree[0]);
-                        pending--;
-                        if (pending === 0) render(processed);
-                    });
-                }
-            });
-        });
+        bookmarks = DevNotebookDB.getBookmarksByFolder(activeProjectId, folderId);
     } else {
-        // Get top-level bookmark tree
-        chrome.bookmarks.getTree((tree) => {
-            if (!tree || !tree[0] || !tree[0].children) {
-                render([]);
-                return;
-            }
-            // Root has children like "Bookmarks Bar", "Other Bookmarks", "Mobile Bookmarks"
-            render(tree[0].children);
-        });
+        // Show unfiled bookmarks at root level
+        bookmarks = DevNotebookDB.getBookmarksByFolder(activeProjectId, null);
     }
+
+    grid.innerHTML = '';
+
+    // Show back button if inside a folder
+    if (backBtn) {
+        backBtn.style.display = folderId ? 'flex' : 'none';
+    }
+
+    // Update section title with folder name
+    const sectionTitle = document.getElementById('dashboard-bm-section-title');
+    if (sectionTitle) {
+        if (folderId) {
+            const currentFolder = DevNotebookDB.getBookmarkFolder(folderId);
+            sectionTitle.textContent = currentFolder ? currentFolder.name : 'Bookmarks';
+        } else {
+            sectionTitle.textContent = 'Bookmarks';
+        }
+    }
+
+    if (folders.length === 0 && bookmarks.length === 0) {
+        grid.innerHTML = `
+            <div class="bookmark-card-empty">
+                <span class="material-symbols-rounded">bookmark_border</span>
+                No bookmarks yet. Click <strong>Add Bookmark</strong> to create one.
+            </div>`;
+        return;
+    }
+
+    // Render folders first
+    folders.forEach(folder => {
+        const card = document.createElement('div');
+        card.className = 'bookmark-card bookmark-folder-card';
+        card.dataset.folderId = folder.id;
+        const items = DevNotebookDB.getBookmarksByFolder(activeProjectId, folder.id);
+        const count = items.length;
+        card.innerHTML = `
+            <div class="bookmark-card-favicon bookmark-folder-icon">
+                <span class="material-symbols-rounded">folder</span>
+            </div>
+            <div class="bookmark-card-info">
+                <div class="bookmark-card-title">${escapeHtml(folder.name || 'Untitled Folder')}</div>
+                <div class="bookmark-card-url">${count} item${count !== 1 ? 's' : ''}</div>
+            </div>
+            <span class="bm-folder-badge">${count}</span>
+            <span class="material-symbols-rounded bookmark-card-arrow">chevron_right</span>
+            <div class="bookmark-card-actions">
+                <button class="bookmark-card-action-btn" title="Rename folder" data-action="rename" data-folder-id="${folder.id}">
+                    <span class="material-symbols-rounded">edit</span>
+                </button>
+                <button class="bookmark-card-action-btn danger" title="Delete folder" data-action="delete" data-folder-id="${folder.id}">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+        `;
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.bookmark-card-actions')) return;
+            navigateBookmarkFolder(folder.id);
+        });
+        // Rename folder handler
+        card.querySelector('[data-action="rename"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const newName = prompt('Rename folder:', folder.name);
+            if (newName === null || !newName.trim()) return;
+            DevNotebookDB.updateBookmarkFolder(folder.id, { name: newName.trim() });
+            const currentFolderId = _bmFolderHistory.length > 0
+                ? _bmFolderHistory[_bmFolderHistory.length - 1]
+                : undefined;
+            renderDashboardBookmarks(currentFolderId);
+            showNotification('Folder renamed');
+        });
+        // Delete folder handler
+        card.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!confirm('Delete this folder? Bookmarks inside will become unfiled.')) return;
+            DevNotebookDB.deleteBookmarkFolder(folder.id);
+            const currentFolderId = _bmFolderHistory.length > 0
+                ? _bmFolderHistory[_bmFolderHistory.length - 1]
+                : undefined;
+            renderDashboardBookmarks(currentFolderId);
+            showNotification('Folder deleted');
+        });
+        grid.appendChild(card);
+    });
+
+    // Render bookmark links
+    bookmarks.forEach(bm => {
+        const card = document.createElement('div');
+        card.className = 'bookmark-card';
+        card.dataset.bmId = bm.id;
+        card.dataset.url = bm.url || '';
+        const favicon = bm.url ? getFaviconUrl(bm.url) : '';
+        card.innerHTML = `
+            <div class="bookmark-card-favicon">
+                ${favicon ? `<img src="${favicon}" alt="">` : ''}
+                <span class="material-symbols-rounded" ${favicon ? 'style="display:none"' : ''}>language</span>
+            </div>
+            <div class="bookmark-card-info">
+                <div class="bookmark-card-title">${escapeHtml(bm.title || bm.url || 'Untitled')}</div>
+                <div class="bookmark-card-url">${escapeHtml(bm.url ? getDomain(bm.url) : '')}</div>
+            </div>
+            <div class="bookmark-card-actions">
+                <button class="bookmark-card-action-btn" title="Move to folder" data-action="move" data-bm-id="${bm.id}">
+                    <span class="material-symbols-rounded">drive_file_move</span>
+                </button>
+                <button class="bookmark-card-action-btn" title="Edit bookmark" data-action="edit" data-bm-id="${bm.id}">
+                    <span class="material-symbols-rounded">edit</span>
+                </button>
+                <button class="bookmark-card-action-btn danger" title="Delete bookmark" data-action="delete" data-bm-id="${bm.id}">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+        `;
+        // Click to open URL (but not when clicking actions)
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.bookmark-card-actions')) return;
+            if (bm.url) window.open(bm.url, '_blank');
+        });
+        // Handle favicon error
+        const img = card.querySelector('img');
+        if (img) {
+            img.addEventListener('error', function() {
+                this.style.display = 'none';
+                this.nextElementSibling.style.display = 'flex';
+            });
+        }
+        // Move to folder handler
+        card.querySelector('[data-action="move"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            _showMoveToFolderMenu(bm.id, card);
+        });
+        // Edit bookmark handler
+        card.querySelector('[data-action="edit"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            dashboardBmShowPopup(bm.id);
+        });
+        // Delete bookmark handler
+        card.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!confirm('Delete this bookmark?')) return;
+            DevNotebookDB.deleteItem(bm.id);
+            const currentFolderId = _bmFolderHistory.length > 0
+                ? _bmFolderHistory[_bmFolderHistory.length - 1]
+                : undefined;
+            renderDashboardBookmarks(currentFolderId);
+            renderItemsList();
+            showNotification('Bookmark deleted');
+        });
+        grid.appendChild(card);
+    });
+
+    // Setup drag & drop
+    _setupBookmarkDragDrop(grid);
 }
 
-function countBookmarks(node) {
-    let count = 0;
-    if (node.url) return 1;
-    if (node.children) {
-        node.children.forEach(c => { count += countBookmarks(c); });
+// --- Drag & Drop for local bookmarks into folders ---
+function _setupBookmarkDragDrop(grid) {
+    const dropzone = document.getElementById('dashboard-bm-dropzone');
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : null;
+
+    // Build the folder drop targets for the drop zone bar
+    function showDropZone() {
+        if (!dropzone || !activeProjectId) return;
+        const allFolders = DevNotebookDB.getAllBookmarkFolders(activeProjectId);
+        // Show targets: "Unfiled" (root) + all folders except the current one
+        let html = '';
+        // If inside a folder, show "Unfiled" option to move to root
+        if (currentFolderId) {
+            html += `<div class="bm-dropzone-target" data-drop-folder="">
+                <span class="material-symbols-rounded">home</span>
+                <span>Unfiled</span>
+            </div>`;
+        }
+        allFolders.forEach(f => {
+            if (f.id === currentFolderId) return; // Skip the folder we're currently in
+            html += `<div class="bm-dropzone-target" data-drop-folder="${f.id}">
+                <span class="material-symbols-rounded">folder</span>
+                <span>${escapeHtml(f.name)}</span>
+            </div>`;
+        });
+
+        if (!html) return; // No targets to show
+        dropzone.innerHTML = `<div class="bm-dropzone-label"><span class="material-symbols-rounded">drive_file_move</span> Drop into folder:</div><div class="bm-dropzone-targets">${html}</div>`;
+        dropzone.style.display = 'flex';
+        // Ensure the drop zone is visible to the user
+        dropzone.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        // Wire drop targets
+        dropzone.querySelectorAll('.bm-dropzone-target').forEach(target => {
+            target.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                target.classList.add('bm-drop-target');
+            });
+            target.addEventListener('dragleave', () => {
+                target.classList.remove('bm-drop-target');
+            });
+            target.addEventListener('drop', (e) => {
+                e.preventDefault();
+                target.classList.remove('bm-drop-target');
+                const bmId = e.dataTransfer.getData('text/plain');
+                const targetFolderId = target.dataset.dropFolder;
+                if (!bmId) return;
+                DevNotebookDB.updateItem(bmId, { folder_id: targetFolderId || null });
+                hideDropZone();
+                const viewFolderId = _bmFolderHistory.length > 0
+                    ? _bmFolderHistory[_bmFolderHistory.length - 1]
+                    : undefined;
+                renderDashboardBookmarks(viewFolderId);
+                bmRenderBookmarks();
+                bmRenderFolders();
+                const folderName = targetFolderId
+                    ? (DevNotebookDB.getBookmarkFolder(targetFolderId)?.name || 'folder')
+                    : 'Unfiled';
+                showNotification(`Moved to ${folderName}`);
+            });
+        });
     }
-    return count;
+
+    function hideDropZone() {
+        if (dropzone) {
+            dropzone.style.display = 'none';
+            dropzone.innerHTML = '';
+        }
+    }
+
+    // Make bookmark cards draggable
+    grid.querySelectorAll('.bookmark-card:not(.bookmark-folder-card)').forEach(card => {
+        card.setAttribute('draggable', 'true');
+        card.addEventListener('dragstart', (e) => {
+            const bmId = card.dataset.bmId;
+            if (!bmId) { e.preventDefault(); return; }
+            e.dataTransfer.setData('text/plain', bmId);
+            e.dataTransfer.setData('application/x-bookmark-id', bmId);
+            e.dataTransfer.effectAllowed = 'move';
+            // Use setTimeout so the visual doesn't include the dragging class in the ghost image
+            // Also move showDropZone() here to avoid DOM reflow during dragstart that cancels the drag
+            setTimeout(() => {
+                card.classList.add('bm-dragging');
+                grid.classList.add('bm-drag-active');
+                showDropZone();
+            }, 0);
+        });
+        card.addEventListener('dragend', () => {
+            card.classList.remove('bm-dragging');
+            grid.classList.remove('bm-drag-active');
+            document.querySelectorAll('.bm-drop-target').forEach(el => el.classList.remove('bm-drop-target'));
+            hideDropZone();
+        });
+    });
+
+    // Make folder cards drop targets
+    grid.querySelectorAll('.bookmark-folder-card').forEach(folderCard => {
+        folderCard.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            folderCard.classList.add('bm-drop-target');
+        });
+        folderCard.addEventListener('dragleave', (e) => {
+            // Only remove highlight if we're actually leaving the folder card
+            if (!folderCard.contains(e.relatedTarget)) {
+                folderCard.classList.remove('bm-drop-target');
+            }
+        });
+        folderCard.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            folderCard.classList.remove('bm-drop-target');
+            const bmId = e.dataTransfer.getData('text/plain');
+            const folderId = folderCard.dataset.folderId;
+            if (!bmId || !folderId) return;
+            // Move bookmark into this folder
+            DevNotebookDB.updateItem(bmId, { folder_id: folderId });
+            hideDropZone();
+            const currentFolderView = _bmFolderHistory.length > 0
+                ? _bmFolderHistory[_bmFolderHistory.length - 1]
+                : undefined;
+            renderDashboardBookmarks(currentFolderView);
+            if (typeof bmRenderBookmarks === 'function') bmRenderBookmarks();
+            if (typeof bmRenderFolders === 'function') bmRenderFolders();
+            showNotification('Bookmark moved to folder');
+        });
+    });
+}
+
+// --- "Move to folder" popup menu (alternative to drag & drop) ---
+function _showMoveToFolderMenu(bmId, anchorEl) {
+    // Remove any existing menu
+    document.querySelectorAll('.bm-move-menu').forEach(m => m.remove());
+
+    if (!activeProjectId) return;
+    const allFolders = DevNotebookDB.getAllBookmarkFolders(activeProjectId);
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : null;
+
+    // Get the bookmark's current folder
+    const bm = DevNotebookDB.getItem(bmId);
+    const bmCurrentFolder = bm ? bm.folder_id : null;
+
+    const menu = document.createElement('div');
+    menu.className = 'bm-move-menu';
+
+    let html = '<div class="bm-move-menu-title">Move to…</div>';
+
+    // Show "Unfiled" option if bookmark is currently in a folder
+    if (bmCurrentFolder) {
+        html += `<button class="bm-move-menu-item" data-target-folder="">
+            <span class="material-symbols-rounded">home</span>
+            <span>Unfiled (root)</span>
+        </button>`;
+    }
+
+    allFolders.forEach(f => {
+        if (f.id === bmCurrentFolder) return; // skip current folder
+        html += `<button class="bm-move-menu-item" data-target-folder="${f.id}">
+            <span class="material-symbols-rounded">folder</span>
+            <span>${escapeHtml(f.name)}</span>
+        </button>`;
+    });
+
+    if (!allFolders.length && !bmCurrentFolder) {
+        html += '<div class="bm-move-menu-empty">No folders yet. Create one first.</div>';
+    }
+
+    menu.innerHTML = html;
+
+    // Position the menu near the anchor element
+    document.body.appendChild(menu);
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.left = rect.left + 'px';
+
+    // Adjust if menu would go off-screen
+    requestAnimationFrame(() => {
+        const menuRect = menu.getBoundingClientRect();
+        if (menuRect.right > window.innerWidth - 12) {
+            menu.style.left = (window.innerWidth - menuRect.width - 12) + 'px';
+        }
+        if (menuRect.bottom > window.innerHeight - 12) {
+            menu.style.top = (rect.top - menuRect.height - 4) + 'px';
+        }
+    });
+
+    // Handle folder selection
+    menu.querySelectorAll('.bm-move-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const targetFolderId = item.dataset.targetFolder;
+            DevNotebookDB.updateItem(bmId, { folder_id: targetFolderId || null });
+            menu.remove();
+            const viewFolderId = _bmFolderHistory.length > 0
+                ? _bmFolderHistory[_bmFolderHistory.length - 1]
+                : undefined;
+            renderDashboardBookmarks(viewFolderId);
+            if (typeof bmRenderBookmarks === 'function') bmRenderBookmarks();
+            if (typeof bmRenderFolders === 'function') bmRenderFolders();
+            const folderName = targetFolderId
+                ? (DevNotebookDB.getBookmarkFolder(targetFolderId)?.name || 'folder')
+                : 'Unfiled';
+            showNotification(`Moved to ${folderName}`);
+        });
+    });
+
+    // Close menu on outside click
+    function closeMenu(e) {
+        if (!menu.contains(e.target)) {
+            menu.remove();
+            document.removeEventListener('click', closeMenu, true);
+        }
+    }
+    setTimeout(() => document.addEventListener('click', closeMenu, true), 0);
 }
 
 function getFaviconUrl(url) {
@@ -2104,48 +2369,312 @@ function getDomain(url) {
     }
 }
 
+// --- Browser Bookmarks Section ---
+let _browserBmFolderHistory = [];
+
+function renderBrowserBookmarks(folderId) {
+    const grid = document.getElementById('browser-bookmark-grid');
+    const backBtn = document.getElementById('browser-bookmarks-back');
+    const section = document.getElementById('dashboard-browser-bookmarks-section');
+    if (!grid) return;
+
+    // Check if chrome.bookmarks API is available
+    if (typeof chrome === 'undefined' || !chrome.bookmarks) {
+        if (section) section.style.display = 'none';
+        return;
+    }
+    if (section) section.style.display = '';
+
+    const render = (nodes) => {
+        grid.innerHTML = '';
+        const folders = [];
+        const links = [];
+        nodes.forEach(node => {
+            if (node.children) {
+                if (node.children.length > 0) folders.push(node);
+            } else if (node.url) {
+                links.push(node);
+            }
+        });
+
+        if (backBtn) {
+            backBtn.style.display = folderId ? 'flex' : 'none';
+        }
+
+        if (folders.length === 0 && links.length === 0) {
+            grid.innerHTML = `
+                <div class="bookmark-card-empty">
+                    <span class="material-symbols-rounded">bookmark_border</span>
+                    No browser bookmarks
+                </div>`;
+            return;
+        }
+
+        folders.forEach(folder => {
+            const card = document.createElement('div');
+            card.className = 'bookmark-card bookmark-folder-card browser-bm-folder';
+            const count = _countChromeBookmarks(folder);
+            card.innerHTML = `
+                <div class="bookmark-card-favicon bookmark-folder-icon">
+                    <span class="material-symbols-rounded">folder</span>
+                </div>
+                <div class="bookmark-card-info">
+                    <div class="bookmark-card-title">${escapeHtml(folder.title || 'Untitled Folder')}</div>
+                    <div class="bookmark-card-url">${count} item${count !== 1 ? 's' : ''}</div>
+                </div>
+                <span class="material-symbols-rounded bookmark-card-arrow">chevron_right</span>
+            `;
+            card.addEventListener('click', () => {
+                _browserBmFolderHistory.push(folderId || null);
+                renderBrowserBookmarks(folder.id);
+            });
+            grid.appendChild(card);
+        });
+
+        links.forEach(link => {
+            const card = document.createElement('a');
+            card.className = 'bookmark-card browser-bm-link';
+            card.href = link.url;
+            card.target = '_blank';
+            card.rel = 'noopener';
+            const favicon = getFaviconUrl(link.url);
+            card.innerHTML = `
+                <div class="bookmark-card-favicon">
+                    <img src="${favicon}" alt="">
+                    <span class="material-symbols-rounded" style="display:none;">language</span>
+                </div>
+                <div class="bookmark-card-info">
+                    <div class="bookmark-card-title">${escapeHtml(link.title || link.url)}</div>
+                    <div class="bookmark-card-url">${escapeHtml(getDomain(link.url))}</div>
+                </div>
+            `;
+            const img = card.querySelector('img');
+            if (img) {
+                img.addEventListener('error', function() {
+                    this.style.display = 'none';
+                    this.nextElementSibling.style.display = 'flex';
+                });
+            }
+            grid.appendChild(card);
+        });
+    };
+
+    if (folderId) {
+        chrome.bookmarks.getChildren(folderId, (children) => {
+            const processed = [];
+            let pending = children.length;
+            if (pending === 0) { render([]); return; }
+            children.forEach(child => {
+                if (child.url) {
+                    processed.push(child);
+                    pending--;
+                    if (pending === 0) render(processed);
+                } else {
+                    chrome.bookmarks.getSubTree(child.id, (subtree) => {
+                        processed.push(subtree[0]);
+                        pending--;
+                        if (pending === 0) render(processed);
+                    });
+                }
+            });
+        });
+    } else {
+        chrome.bookmarks.getTree((tree) => {
+            if (!tree || !tree[0] || !tree[0].children) {
+                render([]);
+                return;
+            }
+            render(tree[0].children);
+        });
+    }
+}
+
+function _countChromeBookmarks(node) {
+    let count = 0;
+    if (node.url) return 1;
+    if (node.children) {
+        node.children.forEach(c => { count += _countChromeBookmarks(c); });
+    }
+    return count;
+}
+
+// Wire browser bookmarks back button
+document.getElementById('browser-bookmarks-back')?.addEventListener('click', () => {
+    const prev = _browserBmFolderHistory.pop();
+    renderBrowserBookmarks(prev || undefined);
+});
+
 // Bookmark folder navigation history
 let _bmFolderHistory = [];
 
 function navigateBookmarkFolder(folderId) {
     _bmFolderHistory.push(folderId);
-    renderBrowserBookmarks(folderId);
+    renderDashboardBookmarks(folderId);
 }
 
 function navigateBookmarkBack() {
     _bmFolderHistory.pop(); // remove current
     const prev = _bmFolderHistory.length > 0 ? _bmFolderHistory[_bmFolderHistory.length - 1] : undefined;
     if (prev !== undefined) {
-        renderBrowserBookmarks(prev);
+        renderDashboardBookmarks(prev);
     } else {
         _bmFolderHistory = [];
-        renderBrowserBookmarks();
+        renderDashboardBookmarks();
     }
 }
 
 // Wire back button
 document.getElementById('dashboard-bookmarks-back')?.addEventListener('click', navigateBookmarkBack);
 
-// Dashboard: New Folder button (creates a Chrome bookmark folder)
+// Dashboard: New Folder button (creates a local bookmark folder)
 document.getElementById('dashboard-add-folder-btn')?.addEventListener('click', () => {
     const name = prompt('New folder name:');
     if (!name || !name.trim()) return;
+    if (!activeProjectId) {
+        showNotification('Select a project first');
+        return;
+    }
 
-    if (typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.create) {
-        // Determine parent: if browsing inside a folder, create there; otherwise in Bookmarks Bar
-        const parentId = _bmFolderHistory.length > 0
-            ? _bmFolderHistory[_bmFolderHistory.length - 1]
-            : '1'; // '1' = Bookmarks Bar
-        chrome.bookmarks.create({ parentId, title: name.trim() }, () => {
-            // Re-render current view
-            const currentFolderId = _bmFolderHistory.length > 0
-                ? _bmFolderHistory[_bmFolderHistory.length - 1]
-                : undefined;
-            renderBrowserBookmarks(currentFolderId);
+    const parentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : null;
+
+    const folder = {
+        id: 'bmf_' + Date.now(),
+        project_id: activeProjectId,
+        name: name.trim(),
+        parent_id: parentFolderId || null,
+        sort_order: 0,
+        created: new Date().toISOString()
+    };
+    DevNotebookDB.createBookmarkFolder(folder);
+
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : undefined;
+    renderDashboardBookmarks(currentFolderId);
+    showNotification('Folder created');
+});
+
+// --- Dashboard Add Bookmark Mini Popup ---
+let _dashboardBmEditId = null;
+
+function dashboardBmShowPopup(editId) {
+    const popup = document.getElementById('dashboard-bm-popup');
+    const titleInput = document.getElementById('dashboard-bm-title');
+    const urlInput = document.getElementById('dashboard-bm-url');
+    const folderSelect = document.getElementById('dashboard-bm-folder');
+    const popupTitle = document.getElementById('dashboard-bm-popup-title');
+    if (!popup) return;
+
+    _dashboardBmEditId = editId || null;
+
+    // Populate folder select
+    if (folderSelect && activeProjectId) {
+        const folders = DevNotebookDB.getAllBookmarkFolders(activeProjectId);
+        folderSelect.innerHTML = '<option value="">No Folder</option>';
+        folders.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.id;
+            opt.textContent = f.name;
+            folderSelect.appendChild(opt);
         });
+        // Default to current browsed folder
+        const currentFolderId = _bmFolderHistory.length > 0
+            ? _bmFolderHistory[_bmFolderHistory.length - 1]
+            : '';
+        folderSelect.value = currentFolderId || '';
+    }
+
+    if (editId) {
+        popupTitle.textContent = 'Edit Bookmark';
+        const item = getItem(editId);
+        if (item) {
+            titleInput.value = item.title || '';
+            urlInput.value = item.url || '';
+            if (folderSelect) folderSelect.value = item.folder_id || '';
+        }
     } else {
-        // Fallback: also create in internal bookmark manager
-        bmCreateFolder();
+        popupTitle.textContent = 'Add Bookmark';
+        titleInput.value = '';
+        urlInput.value = '';
+    }
+
+    popup.style.display = 'block';
+    setTimeout(() => urlInput.focus(), 50);
+}
+
+function dashboardBmHidePopup() {
+    const popup = document.getElementById('dashboard-bm-popup');
+    if (popup) popup.style.display = 'none';
+    _dashboardBmEditId = null;
+}
+
+function dashboardBmSave() {
+    const titleInput = document.getElementById('dashboard-bm-title');
+    const urlInput = document.getElementById('dashboard-bm-url');
+    const folderSelect = document.getElementById('dashboard-bm-folder');
+
+    const title = titleInput.value.trim();
+    let url = urlInput.value.trim();
+    const folderId = folderSelect ? folderSelect.value : '';
+
+    if (!url) {
+        showNotification('URL is required');
+        urlInput.focus();
+        return;
+    }
+
+    // Auto-prefix https if no protocol
+    if (url && !/^https?:\/\//i.test(url)) {
+        url = 'https://' + url;
+    }
+
+    if (_dashboardBmEditId) {
+        DevNotebookDB.updateItem(_dashboardBmEditId, {
+            title: title || url,
+            url: url,
+            folder_id: folderId || null
+        });
+        showNotification('Bookmark updated');
+    } else {
+        if (!activeProjectId) {
+            showNotification('Select a project first');
+            return;
+        }
+        const newItem = {
+            id: 'bm_' + Date.now(),
+            project_id: activeProjectId,
+            type: 'bookmark',
+            title: title || url,
+            url: url,
+            description: '',
+            folder_id: folderId || null,
+            created: new Date().toISOString()
+        };
+        DevNotebookDB.createItem(newItem);
+        showNotification('Bookmark added');
+    }
+
+    dashboardBmHidePopup();
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : undefined;
+    renderDashboardBookmarks(currentFolderId);
+    renderItemsList();
+}
+
+// Wire popup buttons
+document.getElementById('dashboard-add-bookmark-btn')?.addEventListener('click', () => dashboardBmShowPopup(null));
+document.getElementById('dashboard-bm-popup-close')?.addEventListener('click', dashboardBmHidePopup);
+document.getElementById('dashboard-bm-popup-cancel')?.addEventListener('click', dashboardBmHidePopup);
+document.getElementById('dashboard-bm-popup-save')?.addEventListener('click', dashboardBmSave);
+
+// Allow Enter key to save from URL field
+document.getElementById('dashboard-bm-url')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        dashboardBmSave();
     }
 });
 
@@ -2809,30 +3338,13 @@ function bmCreateFolder() {
 
     DevNotebookDB.createBookmarkFolder(folder);
 
-    // Sync to browser: create folder in Chrome bookmarks
-    if (typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.create) {
-        const parentChromeId = bmGetChromeParentId();
-        chrome.bookmarks.create({
-            parentId: parentChromeId,
-            title: name.trim()
-        }, (created) => {
-            if (created) {
-                DevNotebookDB.updateBookmarkFolder(folder.id, { chrome_id: created.id });
-            }
-        });
-    }
-
     bmRenderFolders();
+    // Also refresh dashboard bookmarks
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : undefined;
+    renderDashboardBookmarks(currentFolderId);
     showNotification('Folder created');
-}
-
-function bmGetChromeParentId() {
-    // Get the Chrome bookmark folder ID for the current folder
-    if (bmCurrentFolderId) {
-        const folder = DevNotebookDB.getBookmarkFolder(bmCurrentFolderId);
-        if (folder && folder.chrome_id) return folder.chrome_id;
-    }
-    return '1'; // '1' = Bookmarks Bar in Chrome
 }
 
 function bmRenameFolder(folderId) {
@@ -2843,24 +3355,16 @@ function bmRenameFolder(folderId) {
 
     DevNotebookDB.updateBookmarkFolder(folderId, { name: name.trim() });
 
-    // Sync rename to Chrome
-    if (folder.chrome_id && typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.update) {
-        chrome.bookmarks.update(folder.chrome_id, { title: name.trim() });
-    }
-
     bmRenderFolders();
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : undefined;
+    renderDashboardBookmarks(currentFolderId);
     showNotification('Folder renamed');
 }
 
 function bmDeleteFolder(folderId) {
     if (!confirm('Delete this folder? Bookmarks inside will be moved to "All Bookmarks".')) return;
-
-    const folder = DevNotebookDB.getBookmarkFolder(folderId);
-
-    // Remove from Chrome
-    if (folder && folder.chrome_id && typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.removeTree) {
-        try { chrome.bookmarks.removeTree(folder.chrome_id); } catch(e) {}
-    }
 
     DevNotebookDB.deleteBookmarkFolder(folderId);
 
@@ -2870,6 +3374,10 @@ function bmDeleteFolder(folderId) {
 
     bmRenderFolders();
     bmRenderBookmarks();
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : undefined;
+    renderDashboardBookmarks(currentFolderId);
     showNotification('Folder deleted');
 }
 
@@ -3112,20 +3620,6 @@ function bmSaveBookmark() {
         };
         DevNotebookDB.createItem(newItem);
 
-        // Sync to Chrome bookmarks
-        if (typeof chrome !== 'undefined' && chrome.bookmarks && chrome.bookmarks.create) {
-            let parentChromeId = '1'; // Bookmarks Bar
-            if (folderId) {
-                const folder = DevNotebookDB.getBookmarkFolder(folderId);
-                if (folder && folder.chrome_id) parentChromeId = folder.chrome_id;
-            }
-            chrome.bookmarks.create({
-                parentId: parentChromeId,
-                title: title || url,
-                url: url
-            });
-        }
-
         showNotification('Bookmark created');
     }
 
@@ -3133,6 +3627,12 @@ function bmSaveBookmark() {
     bmRenderBookmarks();
     bmRenderFolders();
     renderItemsList();
+
+    // Also refresh dashboard bookmarks
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : undefined;
+    renderDashboardBookmarks(currentFolderId);
 }
 
 function bmDeleteBookmark(id) {
@@ -3141,6 +3641,12 @@ function bmDeleteBookmark(id) {
     bmRenderBookmarks();
     bmRenderFolders();
     renderItemsList();
+
+    // Refresh dashboard bookmarks
+    const currentFolderId = _bmFolderHistory.length > 0
+        ? _bmFolderHistory[_bmFolderHistory.length - 1]
+        : undefined;
+    renderDashboardBookmarks(currentFolderId);
     showNotification('Bookmark deleted');
 }
 

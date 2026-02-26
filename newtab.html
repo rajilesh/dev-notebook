@@ -180,16 +180,71 @@
 
                     <div class="dashboard-section" id="dashboard-bookmarks-section">
                         <div class="dashboard-section-header">
-                            <span class="material-symbols-rounded" style="font-size: 20px; color: var(--accent);">bookmark</span>
-                            <h2>Bookmarks</h2>
-                            <button id="dashboard-add-folder-btn" class="icon-btn small" style="margin-left:auto;" title="New Folder">
-                                <span class="material-symbols-rounded">create_new_folder</span>
-                            </button>
                             <button id="dashboard-bookmarks-back" class="icon-btn small" style="display:none;" title="Back">
                                 <span class="material-symbols-rounded">arrow_back</span>
                             </button>
+                            <span class="material-symbols-rounded" style="font-size: 20px; color: var(--accent);">bookmark</span>
+                            <h2 id="dashboard-bm-section-title">Bookmarks</h2>
+                            <div class="dashboard-bm-header-actions">
+                                <button id="dashboard-add-bookmark-btn" class="dashboard-bm-action-btn" title="Add Bookmark">
+                                    <span class="material-symbols-rounded">add_link</span>
+                                    <span>Add Bookmark</span>
+                                </button>
+                                <button id="dashboard-add-folder-btn" class="dashboard-bm-action-btn outline" title="New Folder">
+                                    <span class="material-symbols-rounded">create_new_folder</span>
+                                    <span>New Folder</span>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Mini popup form for adding/editing bookmarks -->
+                        <div id="dashboard-bm-popup" class="dashboard-bm-popup" style="display:none;">
+                            <div class="dashboard-bm-popup-inner">
+                                <div class="dashboard-bm-popup-header">
+                                    <h3 id="dashboard-bm-popup-title">Add Bookmark</h3>
+                                    <button id="dashboard-bm-popup-close" class="icon-btn small" title="Close">
+                                        <span class="material-symbols-rounded">close</span>
+                                    </button>
+                                </div>
+                                <div class="dashboard-bm-popup-body">
+                                    <div class="dashboard-bm-field">
+                                        <label>Title</label>
+                                        <input type="text" id="dashboard-bm-title" placeholder="e.g. Google Docs">
+                                    </div>
+                                    <div class="dashboard-bm-field">
+                                        <label>URL</label>
+                                        <input type="url" id="dashboard-bm-url" placeholder="https://example.com">
+                                    </div>
+                                    <div class="dashboard-bm-field">
+                                        <label>Folder</label>
+                                        <select id="dashboard-bm-folder">
+                                            <option value="">No Folder</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="dashboard-bm-popup-footer">
+                                    <button id="dashboard-bm-popup-cancel" class="dashboard-bm-btn secondary">Cancel</button>
+                                    <button id="dashboard-bm-popup-save" class="dashboard-bm-btn primary">Save Bookmark</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="dashboard-bm-dropzone" class="dashboard-bm-dropzone" style="display:none;">
+                            <!-- Folder drop targets injected by JS on drag start -->
                         </div>
                         <div id="dashboard-bookmark-grid" class="bookmark-grid">
+                            <!-- Local bookmarks rendered by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Browser Bookmarks Section -->
+                    <div class="dashboard-section" id="dashboard-browser-bookmarks-section">
+                        <div class="dashboard-section-header">
+                            <span class="material-symbols-rounded" style="font-size: 20px; color: var(--text-muted);">public</span>
+                            <h2>Browser Bookmarks</h2>
+                            <button id="browser-bookmarks-back" class="icon-btn small" style="display:none;margin-left:auto;" title="Back">
+                                <span class="material-symbols-rounded">arrow_back</span>
+                            </button>
+                        </div>
+                        <div id="browser-bookmark-grid" class="bookmark-grid browser-bookmark-grid">
                             <!-- Browser bookmarks rendered by JS -->
                         </div>
                     </div>
