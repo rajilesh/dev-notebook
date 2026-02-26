@@ -2204,7 +2204,8 @@ function _setupBookmarkDragDrop(grid) {
     }
 
     // Make bookmark cards draggable
-    grid.querySelectorAll('.bookmark-card:not(.bookmark-folder-card)').forEach(card => {
+    const bmCards = grid.querySelectorAll('.bookmark-card:not(.bookmark-folder-card)');
+    bmCards.forEach(card => {
         card.setAttribute('draggable', 'true');
         card.addEventListener('dragstart', (e) => {
             const bmId = card.dataset.bmId;
@@ -2212,8 +2213,6 @@ function _setupBookmarkDragDrop(grid) {
             e.dataTransfer.setData('text/plain', bmId);
             e.dataTransfer.setData('application/x-bookmark-id', bmId);
             e.dataTransfer.effectAllowed = 'move';
-            // Use setTimeout so the visual doesn't include the dragging class in the ghost image
-            // Also move showDropZone() here to avoid DOM reflow during dragstart that cancels the drag
             setTimeout(() => {
                 card.classList.add('bm-dragging');
                 grid.classList.add('bm-drag-active');
@@ -2223,9 +2222,116 @@ function _setupBookmarkDragDrop(grid) {
         card.addEventListener('dragend', () => {
             card.classList.remove('bm-dragging');
             grid.classList.remove('bm-drag-active');
+            grid.querySelectorAll('.bm-drop-before, .bm-drop-after').forEach(el => {
+                el.classList.remove('bm-drop-before', 'bm-drop-after');
+            });
             document.querySelectorAll('.bm-drop-target').forEach(el => el.classList.remove('bm-drop-target'));
             hideDropZone();
         });
+
+        // Reorder: dragover on sibling bookmark cards
+        card.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (card.classList.contains('bm-dragging')) return;
+
+            // Remove old indicators from all cards
+            grid.querySelectorAll('.bm-drop-before, .bm-drop-after').forEach(el => {
+                el.classList.remove('bm-drop-before', 'bm-drop-after');
+            });
+
+            // Determine if we should insert before or after this card
+            const rect = card.getBoundingClientRect();
+            const midX = rect.left + rect.width / 2;
+            const insertBefore = e.clientX < midX;
+
+            card.classList.add(insertBefore ? 'bm-drop-before' : 'bm-drop-after');
+            card._bmInsertBefore = insertBefore;
+        });
+
+        card.addEventListener('dragleave', (e) => {
+            if (!card.contains(e.relatedTarget)) {
+                card.classList.remove('bm-drop-before', 'bm-drop-after');
+            }
+        });
+
+        // Reorder: drop on sibling bookmark card
+        card.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const draggedBmId = e.dataTransfer.getData('text/plain');
+            if (!draggedBmId || draggedBmId === card.dataset.bmId) return;
+
+            grid.querySelectorAll('.bm-drop-before, .bm-drop-after').forEach(el => {
+                el.classList.remove('bm-drop-before', 'bm-drop-after');
+            });
+            hideDropZone();
+
+            // Compute new order: collect current card order, move dragged card
+            const allCards = Array.from(grid.querySelectorAll('.bookmark-card:not(.bookmark-folder-card)'));
+            const orderedIds = allCards.map(c => c.dataset.bmId).filter(Boolean);
+
+            // Remove dragged from current position
+            const fromIdx = orderedIds.indexOf(draggedBmId);
+            if (fromIdx === -1) return;
+            orderedIds.splice(fromIdx, 1);
+
+            // Find target position
+            const targetIdx = orderedIds.indexOf(card.dataset.bmId);
+            if (targetIdx === -1) return;
+            const insertIdx = card._bmInsertBefore ? targetIdx : targetIdx + 1;
+            orderedIds.splice(insertIdx, 0, draggedBmId);
+
+            // Assign sort_order descending (highest = first shown)
+            const total = orderedIds.length;
+            orderedIds.forEach((id, i) => {
+                DevNotebookDB.updateItem(id, { sort_order: total - i });
+            });
+
+            const viewFolderId = _bmFolderHistory.length > 0
+                ? _bmFolderHistory[_bmFolderHistory.length - 1]
+                : undefined;
+            renderDashboardBookmarks(viewFolderId);
+            showNotification('Bookmarks reordered');
+        });
+    });
+
+    // Also allow reorder drop on the grid itself (for dropping at the end)
+    grid.addEventListener('dragover', (e) => {
+        if (e.target === grid || e.target.closest('.bookmark-card') === null) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+    });
+    grid.addEventListener('drop', (e) => {
+        if (e.target !== grid && e.target.closest('.bookmark-card') !== null) return;
+        e.preventDefault();
+        const draggedBmId = e.dataTransfer.getData('text/plain');
+        if (!draggedBmId) return;
+
+        grid.querySelectorAll('.bm-drop-before, .bm-drop-after').forEach(el => {
+            el.classList.remove('bm-drop-before', 'bm-drop-after');
+        });
+        hideDropZone();
+
+        // Move dragged to end
+        const allCards = Array.from(grid.querySelectorAll('.bookmark-card:not(.bookmark-folder-card)'));
+        const orderedIds = allCards.map(c => c.dataset.bmId).filter(Boolean);
+        const fromIdx = orderedIds.indexOf(draggedBmId);
+        if (fromIdx === -1) return;
+        orderedIds.splice(fromIdx, 1);
+        orderedIds.push(draggedBmId);
+
+        const total = orderedIds.length;
+        orderedIds.forEach((id, i) => {
+            DevNotebookDB.updateItem(id, { sort_order: total - i });
+        });
+
+        const viewFolderId = _bmFolderHistory.length > 0
+            ? _bmFolderHistory[_bmFolderHistory.length - 1]
+            : undefined;
+        renderDashboardBookmarks(viewFolderId);
+        showNotification('Bookmarks reordered');
     });
 
     // Make folder cards drop targets
@@ -2690,6 +2796,14 @@ document.getElementById('sidebar-brand-btn')?.addEventListener('click', () => {
 document.getElementById('dashboard-new-note')?.addEventListener('click', () => {
     activeItemType = 'note';
     resourceTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.type === 'note'));
+    renderItemsList();
+    createNewItem();
+});
+
+document.getElementById('dashboard-new-whiteboard')?.addEventListener('click', () => {
+    appContainer.classList.add('sidebar-open');
+    activeItemType = 'draw';
+    resourceTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.type === 'draw'));
     renderItemsList();
     createNewItem();
 });

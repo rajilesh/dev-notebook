@@ -1183,6 +1183,22 @@ body.dashboard-mode .editor-header {
     box-shadow: none;
 }
 
+/* Reorder drop indicators (border on left or right side of card) */
+.bookmark-card.bm-drop-before {
+    box-shadow: -3px 0 0 0 var(--accent);
+    border-left-color: var(--accent);
+}
+
+.bookmark-card.bm-drop-after {
+    box-shadow: 3px 0 0 0 var(--accent);
+    border-right-color: var(--accent);
+}
+
+/* During drag, make non-dragged bookmark cards show subtle feedback */
+.bm-drag-active .bookmark-card:not(.bm-dragging):not(.bookmark-folder-card) {
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
 /* During drag, folder card children shouldn't intercept drag events */
 .bm-drag-active .bookmark-folder-card > * {
     pointer-events: none;
