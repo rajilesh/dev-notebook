@@ -183,9 +183,9 @@ body {
 }
 
 .brand-icon {
-    font-size: 28px;
-    color: var(--accent);
-    font-variation-settings: 'FILL' 1;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
 }
 
 .brand-text {

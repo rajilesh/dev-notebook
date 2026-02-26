@@ -137,6 +137,11 @@ function setAIDockVisibility(visible, { persist = true } = {}) {
 async function ensureAIInitialized() {
     if (aiInitialized) return;
     aiInitialized = true;
+    // Load saved user name into settings input
+    const savedUserName = DevNotebookDB.getSetting('userName', '');
+    const userNameInput = document.getElementById('settings-user-name');
+    if (userNameInput && savedUserName) userNameInput.value = savedUserName;
+
     await loadAISettings();
 }
 
@@ -1933,6 +1938,8 @@ function showDashboard() {
     let greeting = 'Good evening';
     if (hour < 12) greeting = 'Good morning';
     else if (hour < 17) greeting = 'Good afternoon';
+    const userName = DevNotebookDB.getSetting('userName', '');
+    if (userName) greeting += ', ' + userName;
     document.getElementById('dashboard-greeting-text').textContent = greeting;
 
     // Set date
@@ -5070,6 +5077,11 @@ if (saveSettingsBtn) {
         aiSettings.nvidiaKey = settingsNvidiaKey.value.trim();
         aiSettings.alibabaKey = settingsAlibabaKey.value.trim();
         aiSettings.systemInstruction = systemInstructionEl.value.trim();
+
+        const userNameInput = document.getElementById('settings-user-name');
+        if (userNameInput) {
+            DevNotebookDB.setSetting('userName', userNameInput.value.trim());
+        }
 
         await DevNotebookDB.setSetting('aiSettings', aiSettings);
         updateModelDropdown();

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6C5CE7"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f0eeff"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#00000033"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="32" y="32" width="448" height="448" rx="80" ry="80" fill="url(#bg)"/>
+
+  <!-- Notebook binding rings -->
+  <rect x="130" y="80" width="12" height="36" rx="6" fill="#ffffff" opacity="0.85"/>
+  <rect x="200" y="80" width="12" height="36" rx="6" fill="#ffffff" opacity="0.85"/>
+  <rect x="270" y="80" width="12" height="36" rx="6" fill="#ffffff" opacity="0.85"/>
+  <rect x="340" y="80" width="12" height="36" rx="6" fill="#ffffff" opacity="0.85"/>
+
+  <!-- Notebook page -->
+  <rect x="96" y="100" width="320" height="340" rx="20" ry="20" fill="url(#page)" filter="url(#shadow)"/>
+
+  <!-- Notebook lines -->
+  <line x1="130" y1="180" x2="382" y2="180" stroke="#d4d0f0" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="130" y1="220" x2="382" y2="220" stroke="#d4d0f0" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="130" y1="260" x2="320" y2="260" stroke="#d4d0f0" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Code brackets < /> -->
+  <g transform="translate(256, 340)" fill="none" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Left angle bracket < -->
+    <polyline points="-60,-38 -100,0 -60,38" stroke="#6C5CE7"/>
+    <!-- Right angle bracket > -->
+    <polyline points="60,-38 100,0 60,38" stroke="#a855f7"/>
+    <!-- Forward slash / -->
+    <line x1="18" y1="-42" x2="-18" y2="42" stroke="#8b7cf7"/>
+  </g>
+</svg>
