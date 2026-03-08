@@ -3626,8 +3626,8 @@ body.light-mode .chat-message-content code {
 
 .floating-nav-btn {
     position: fixed;
-    top: 14px;
-    left: 14px;
+    top: 17px;
+    left: 70px;
     z-index: 2147483647;
     background: var(--bg-editor);
     color: var(--text-main);
