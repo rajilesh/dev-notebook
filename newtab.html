@@ -24,7 +24,6 @@
         <aside class="sidebar">
             <div class="sidebar-header-composed">
                 <div class="sidebar-brand" id="sidebar-brand-btn" style="cursor:pointer" title="Home">
-                    <img src="icon.svg" alt="Dev Notebook" class="brand-icon">
                     <span class="brand-text">Notebook</span>
                 </div>
                 <div class="ws-controls">
@@ -71,6 +70,8 @@
                     </button>
                 </div>
 
+                <div id="sidebar-section-title" class="sidebar-section-title hidden"></div>
+
                 <div class="search-box">
                     <span class="material-symbols-rounded search-icon">search</span>
                     <input type="text" id="search-input" placeholder="Search...">
@@ -113,6 +114,7 @@
                         </div>
                         <span id="save-status" class="status">Saved</span>
                     </div>
+                    <span id="section-title" class="section-title hidden"></span>
                 </div>
                 <div class="actions">
                     <div id="notification" class="notification"></div>
@@ -144,6 +146,7 @@
                         </button>
                         <button id="todo-toggle-btn" class="icon-btn" title="Toggle To-Do List">
                             <span class="material-symbols-rounded">checklist</span>
+                            <span id="todo-count-badge" class="todo-count-badge" style="display:none;">0</span>
                         </button>
                     </div>
                     <div class="action-divider"></div>

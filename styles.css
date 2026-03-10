@@ -246,6 +246,19 @@ body {
     margin: 4px 0;
 }
 
+.sidebar-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 2px 2px 0;
+}
+
+.sidebar-section-title.hidden {
+    display: none;
+}
+
 .tab-btn {
     flex: 1;
     background: transparent;
@@ -557,8 +570,36 @@ body.dashboard-mode .editor-only {
     display: none !important;
 }
 
+body.dashboard-mode .section-title {
+    display: none !important;
+}
+
 body.dashboard-mode .editor-header {
     border-bottom: none;
+}
+
+/* Keep dashboard hamburger at a stable anchor, consistent with whiteboard view. */
+body.dashboard-mode #toggle-sidebar-btn {
+    position: fixed;
+    top: 17px;
+    left: 20px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--input-bg);
+    box-shadow: var(--shadow-sm);
+    z-index: 2147483647;
+}
+
+body.dashboard-mode #toggle-sidebar-btn:hover {
+    background: var(--item-hover);
+}
+
+/* Prevent overlap between fixed hamburger and sidebar title when sidebar is open on dashboard. */
+body.dashboard-mode .app-container.sidebar-open .sidebar-brand {
+    margin-left: 56px;
 }
 
 .header-left {
@@ -575,6 +616,22 @@ body.dashboard-mode .editor-header {
     gap: 12px;
     flex: 1;
     min-width: 0;
+}
+
+.title-area.hidden {
+    display: none;
+}
+
+.section-title {
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--text-main);
+    white-space: nowrap;
+}
+
+.section-title.hidden {
+    display: none;
 }
 
 .title-input-wrapper {
@@ -1489,6 +1546,30 @@ body.dashboard-mode .editor-header {
     background: var(--accent);
     color: white;
     box-shadow: 0 2px 8px rgba(79, 109, 245, 0.3);
+}
+
+#todo-toggle-btn {
+    overflow: visible;
+}
+
+.todo-count-badge {
+    position: absolute;
+    top: -5px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 2px var(--bg-sidebar);
+    pointer-events: none;
 }
 
 
@@ -3820,6 +3901,11 @@ body.light-mode .preview-content pre code {
     #ai-generate-btn {
         width: 100%;
         margin-top: 10px;
+    }
+
+    body.dashboard-mode #toggle-sidebar-btn {
+        top: 12px;
+        left: 12px;
     }
 }
 

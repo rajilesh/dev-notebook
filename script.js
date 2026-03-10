@@ -11,6 +11,9 @@ const noteTitleEl = document.getElementById('note-title');
 const editorContent = document.getElementById('editor-content');
 const editorToolbar = document.getElementById('editor-toolbar');
 const searchInput = document.getElementById('search-input');
+const titleAreaEl = document.querySelector('.title-area');
+const sectionTitleEl = document.getElementById('section-title');
+const sidebarSectionTitleEl = document.getElementById('sidebar-section-title');
 // Legacy addBtn removed
 const deleteBtn = document.getElementById('delete-note-btn');
 const statusEl = document.getElementById('save-status');
@@ -40,6 +43,7 @@ const addTodoBtn = document.getElementById('add-todo-btn');
 const todoPrevBtn = document.getElementById('todo-prev-btn');
 const todoNextBtn = document.getElementById('todo-next-btn');
 const todoPageInfo = document.getElementById('todo-page-info');
+const todoCountBadge = document.getElementById('todo-count-badge');
 
 // Settings Elements
 const settingsBtn = document.getElementById('settings-btn');
@@ -2808,7 +2812,7 @@ document.getElementById('dashboard-new-note')?.addEventListener('click', () => {
 });
 
 document.getElementById('dashboard-new-whiteboard')?.addEventListener('click', () => {
-    appContainer.classList.add('sidebar-open');
+    appContainer.classList.remove('sidebar-open');
     activeItemType = 'draw';
     resourceTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.type === 'draw'));
     renderItemsList();
@@ -2902,6 +2906,7 @@ function renderSidebarControls() {
 
 function renderItemsList() {
     itemsListEl.innerHTML = '';
+    updateSidebarSectionTitle();
 
     if (!activeProjectId) return;
 
@@ -2979,7 +2984,20 @@ function renderItemsList() {
     });
 }
 
+function updateSidebarSectionTitle() {
+    if (!sidebarSectionTitleEl) return;
+    if (activeItemType === 'bookmark') {
+        sidebarSectionTitleEl.textContent = 'Bookmark';
+        sidebarSectionTitleEl.classList.remove('hidden');
+    } else {
+        sidebarSectionTitleEl.classList.add('hidden');
+    }
+}
+
 function handleItemClick(e, id, visibleItems) {
+    const clickedItem = visibleItems.find(item => item.id === id);
+    const isDrawItem = clickedItem?.type === 'draw';
+
     if (e.shiftKey) {
         // Multi-select range
         if (activeItemId && activeItemId !== id) {
@@ -3012,7 +3030,8 @@ function handleItemClick(e, id, visibleItems) {
         // Single select
         selectedItemIds.clear();
         selectedItemIds.add(id);
-        setActiveItem(id); // Sets active and clears other UI selection logic in render usually... 
+        // Open draw canvases directly on plain click; ctrl/cmd click remains selection-only.
+        setActiveItem(id, { openDraw: isDrawItem }); // Sets active and clears other UI selection logic in render usually... 
         // But setActiveItem implementation clears selection classes too naively? 
         // Let's check setActiveItem.
         // Actually setActiveItem calls renderItemsList, which reads selectedItemIds.
@@ -3072,6 +3091,26 @@ function hideEditors() {
     document.querySelectorAll('.view-pane').forEach(el => el.classList.add('hidden'));
 }
 
+function updateEditorSectionHeader(type) {
+    if (!titleAreaEl || !sectionTitleEl) return;
+
+    if (document.body.classList.contains('dashboard-mode') || type === 'note') {
+        titleAreaEl.classList.remove('hidden');
+        sectionTitleEl.classList.add('hidden');
+        return;
+    }
+
+    const sectionTitles = {
+        bookmark: 'Bookmark',
+        credential: 'Keys',
+        draw: 'Whiteboard'
+    };
+
+    titleAreaEl.classList.add('hidden');
+    sectionTitleEl.textContent = sectionTitles[type] || 'Section';
+    sectionTitleEl.classList.remove('hidden');
+}
+
 function openItemEditor(id, { openDraw = false } = {}) {
     // Logic extracted from setActiveItem to just switch view without resetting list state
     const item = getItem(id);
@@ -3082,6 +3121,7 @@ function openItemEditor(id, { openDraw = false } = {}) {
     document.body.classList.remove('dashboard-mode');
 
     if (!item) return;
+    updateEditorSectionHeader(item.type);
 
     if (item.type === 'note') {
         document.getElementById('editor-content').classList.remove('hidden');
@@ -3441,6 +3481,14 @@ function bmOpenManager() {
     bmRenderFolders();
     bmRenderBookmarks();
     bmHideForm();
+
+    // Reset bookmark view to the top whenever it opens.
+    const bmContent = document.querySelector('.bm-content');
+    const bmList = document.getElementById('bm-list');
+    const bmFolderList = document.getElementById('bm-folder-list');
+    if (bmContent) bmContent.scrollTop = 0;
+    if (bmList) bmList.scrollTop = 0;
+    if (bmFolderList) bmFolderList.scrollTop = 0;
 }
 
 function bmCreateFolder() {
@@ -4146,6 +4194,7 @@ if (aiDock) {
 
 function renderTodoList() {
     todoListEl.innerHTML = '';
+    updateTodoCountBadge();
 
     // Sort: active todos first, then completed by completion date
     const sortedTodos = [...todos].sort((a, b) => {
@@ -4199,12 +4248,26 @@ function renderTodoList() {
     });
 }
 
+function updateTodoCountBadge() {
+    if (!todoToggleBtn || !todoCountBadge) return;
+
+    const totalCount = todos.length;
+    const activeCount = todos.filter(todo => !todo.completed).length;
+
+    todoCountBadge.textContent = String(activeCount);
+    todoCountBadge.style.display = totalCount > 0 ? 'inline-flex' : 'none';
+    todoToggleBtn.title = totalCount > 0
+        ? `Toggle To-Do List (${activeCount} active, ${totalCount} total)`
+        : 'Toggle To-Do List';
+}
+
 function getCompletedTodos() {
     return todos.filter(t => t.completed).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
 }
 
 function renderHistoryList() {
     historyTodoList.innerHTML = '';
+    updateTodoCountBadge();
 
     const completedTodos = getCompletedTodos();
 
@@ -4483,31 +4546,10 @@ backToAppBtn.addEventListener('click', () => {
     photoeditor.classList.remove('active');
     backToAppBtn.classList.remove('active');
     fabAddBtn.classList.remove('hide');
+    appContainer.classList.remove('sidebar-open');
 
-    // Restore last primary view (type + item) if available; fallback to current type, then notes
-    let restoreType = lastPrimaryView?.type || activeItemType || 'note';
-    const restoreItemId = lastPrimaryView?.itemId;
-
-    activeItemType = restoreType;
-    resourceTabs.forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.type === activeItemType);
-    });
-    saveWorkspaces();
-    renderItemsList();
-
-    if (activeProjectId) {
-        let targetId = null;
-        if (restoreItemId) {
-            const found = DevNotebookDB.getItem(restoreItemId);
-            if (found && found.type === activeItemType) targetId = found.id;
-        }
-        if (!targetId) {
-            const items = DevNotebookDB.getItems(activeProjectId, activeItemType);
-            if (items.length > 0) targetId = items[0].id;
-        }
-        if (targetId) setActiveItem(targetId, { openDraw: false });
-        else createNewItem();
-    }
+    // Always route to the home dashboard from tool overlays.
+    showDashboard();
 });
 
 shareBtn.addEventListener('click', shareCurrentItem);
