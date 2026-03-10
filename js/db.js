@@ -9,6 +9,7 @@ const DevNotebookDB = (() => {
     const IDB_KEY = 'main';
     const SCHEMA_VERSION = 2;
 
+    let SQLModule = null;
     let db = null;
     let _ready = null;
     let _persistTimer = null;
@@ -24,15 +25,15 @@ const DevNotebookDB = (() => {
 
     async function _boot() {
         const wasmUrl = chrome.runtime.getURL('js/sql-wasm.wasm');
-        const SQL = await initSqlJs({ locateFile: () => wasmUrl });
+        SQLModule = await initSqlJs({ locateFile: () => wasmUrl });
 
         // Try loading persisted DB from IndexedDB
         const saved = await _idbLoad();
         if (saved) {
-            db = new SQL.Database(new Uint8Array(saved));
+            db = new SQLModule.Database(new Uint8Array(saved));
             _ensureSchema();
         } else {
-            db = new SQL.Database();
+            db = new SQLModule.Database();
             _createSchema();
         }
 
@@ -656,6 +657,20 @@ const DevNotebookDB = (() => {
         return _persistAsync();
     }
 
+    async function reloadFromPersisted() {
+        if (!SQLModule) {
+            await init();
+        }
+        const saved = await _idbLoad();
+        if (!saved) return false;
+        if (db) {
+            try { db.close(); } catch (e) {}
+        }
+        db = new SQLModule.Database(new Uint8Array(saved));
+        _ensureSchema();
+        return true;
+    }
+
     // ── Bookmark Folders ────────────────────────────────────────────
 
     function getBookmarkFolders(projectId, parentId = null) {
@@ -743,6 +758,7 @@ const DevNotebookDB = (() => {
         init,
         migrateFromChromeStorage,
         forcePersist,
+        reloadFromPersisted,
 
         // Workspaces
         getWorkspaces,

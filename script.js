@@ -3920,12 +3920,20 @@ copyBtns.forEach(btn => {
 const _syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('devnotebook_sync') : null;
 
 function notifySyncPeers() {
-    if (_syncChannel) _syncChannel.postMessage({ type: 'data_changed', ts: Date.now() });
+    if (!_syncChannel) return;
+    DevNotebookDB.forcePersist()
+        .catch(() => {
+            // Even if persist fails, still attempt to notify peers.
+        })
+        .finally(() => {
+            _syncChannel.postMessage({ type: 'data_changed', ts: Date.now() });
+        });
 }
 
 if (_syncChannel) {
-    _syncChannel.onmessage = (e) => {
+    _syncChannel.onmessage = async (e) => {
         if (e.data && e.data.type === 'data_changed') {
+            await DevNotebookDB.reloadFromPersisted();
             // Reload UI from DB (another tab made changes)
             renderSidebarControls();
             renderItemsList();
