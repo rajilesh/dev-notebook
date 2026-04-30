@@ -78,7 +78,10 @@ const DevNotebookDB = (() => {
                 text TEXT NOT NULL,
                 completed INTEGER DEFAULT 0,
                 created_at INTEGER,
-                completed_at INTEGER
+                completed_at INTEGER,
+                estimated_minutes INTEGER DEFAULT 0,
+                due_date TEXT,
+                description TEXT
             );
             CREATE TABLE IF NOT EXISTS chat_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,6 +113,24 @@ const DevNotebookDB = (() => {
         // Migration: add folder_id column to items if it doesn't exist
         try {
             db.run('ALTER TABLE items ADD COLUMN folder_id TEXT');
+        } catch(e) {
+            // Column already exists, ignore
+        }
+
+        try {
+            db.run('ALTER TABLE todos ADD COLUMN estimated_minutes INTEGER DEFAULT 0');
+        } catch(e) {
+            // Column already exists, ignore
+        }
+
+        try {
+            db.run('ALTER TABLE todos ADD COLUMN due_date TEXT');
+        } catch(e) {
+            // Column already exists, ignore
+        }
+
+        try {
+            db.run('ALTER TABLE todos ADD COLUMN description TEXT');
         } catch(e) {
             // Column already exists, ignore
         }
@@ -435,8 +456,19 @@ const DevNotebookDB = (() => {
     }
 
     function createTodo(todo) {
-        _run('INSERT INTO todos(id, text, completed, created_at, completed_at) VALUES(?, ?, ?, ?, ?)',
-            [todo.id, todo.text, todo.completed ? 1 : 0, todo.createdAt || Date.now(), todo.completedAt || null]);
+        _run(
+            'INSERT INTO todos(id, text, completed, created_at, completed_at, estimated_minutes, due_date, description) VALUES(?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                todo.id,
+                todo.text,
+                todo.completed ? 1 : 0,
+                todo.createdAt || Date.now(),
+                todo.completedAt || null,
+                Number(todo.estimatedMinutes) || 0,
+                todo.dueDate || null,
+                todo.description || null
+            ]
+        );
     }
 
     function updateTodo(id, changes) {
@@ -447,6 +479,18 @@ const DevNotebookDB = (() => {
         if ('completed_at' in changes || 'completedAt' in changes) {
             sets.push('completed_at = ?');
             params.push(changes.completed_at || changes.completedAt || null);
+        }
+        if ('estimated_minutes' in changes || 'estimatedMinutes' in changes) {
+            sets.push('estimated_minutes = ?');
+            params.push(Number(changes.estimated_minutes ?? changes.estimatedMinutes) || 0);
+        }
+        if ('due_date' in changes || 'dueDate' in changes) {
+            sets.push('due_date = ?');
+            params.push(changes.due_date || changes.dueDate || null);
+        }
+        if ('description' in changes) {
+            sets.push('description = ?');
+            params.push(changes.description || null);
         }
         if (sets.length === 0) return;
         params.push(id);
@@ -645,7 +689,10 @@ const DevNotebookDB = (() => {
                 text: t.text,
                 completed: !!t.completed,
                 createdAt: t.created_at,
-                completedAt: t.completed_at
+                completedAt: t.completed_at,
+                estimatedMinutes: Number(t.estimated_minutes || 0),
+                dueDate: t.due_date || '',
+                description: t.description || ''
             })),
             exportDate: new Date().toISOString(),
             version: '2.0'

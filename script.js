@@ -4,6 +4,7 @@ const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
 const excalidraw = document.getElementById('excalidraw');
 const excalidrawBaseSrc = excalidraw ? excalidraw.getAttribute('src') : 'draw/index.html';
 const photoeditor = document.getElementById('photoeditor');
+const expiryFrame = document.getElementById('expiry-frame');
 
 // Note Elements
 // Legacy notesListEl removed
@@ -19,6 +20,7 @@ const deleteBtn = document.getElementById('delete-note-btn');
 const statusEl = document.getElementById('save-status');
 const openDrawBtn = document.getElementById('open-draw-btn');
 const openPhotoeditorBtn = document.getElementById('open-photoeditor-btn');
+const openExpiryBtn = document.getElementById('open-expiry-btn');
 const backToAppBtn = document.getElementById('back-to-app-btn');
 const shareBtn = document.getElementById('share-btn');
 const exportSingleBtn = document.getElementById('export-single-btn');
@@ -37,19 +39,32 @@ const themeToggleBtn = document.getElementById('theme-toggle-btn');
 const todoToggleBtn = document.getElementById('todo-toggle-btn');
 const closeTodoBtn = document.getElementById('close-todo-btn');
 const clearAllTodosBtn = document.getElementById('clear-all-todos-btn');
+const todoAdvancedToggleBtn = document.getElementById('todo-advanced-toggle-btn');
+const todoSidebarEl = document.querySelector('.todo-sidebar');
 const todoListEl = document.getElementById('todo-list');
 const newTodoInput = document.getElementById('new-todo-input');
+const newTodoHoursInput = document.getElementById('new-todo-hours');
+const newTodoMinutesInput = document.getElementById('new-todo-minutes');
+const newTodoDueDateInput = document.getElementById('new-todo-due-date');
+const newTodoDescriptionInput = document.getElementById('new-todo-description');
+const todoDescriptionToolbar = document.getElementById('todo-description-toolbar');
 const addTodoBtn = document.getElementById('add-todo-btn');
 const todoPrevBtn = document.getElementById('todo-prev-btn');
 const todoNextBtn = document.getElementById('todo-next-btn');
 const todoPageInfo = document.getElementById('todo-page-info');
 const todoCountBadge = document.getElementById('todo-count-badge');
+const todoOverviewLabel = document.getElementById('todo-overview-label');
+const todoOverviewValue = document.getElementById('todo-overview-value');
+const todoOverviewFill = document.getElementById('todo-overview-fill');
+const todoDetailPopup = document.getElementById('todo-detail-popup');
 
 // Settings Elements
 const settingsBtn = document.getElementById('settings-btn');
 const settingsModal = document.getElementById('settings-modal');
 const closeSettingsBtn = document.getElementById('close-settings-btn');
 const deleteAllBtn = document.getElementById('delete-all-btn');
+const settingsTodoDefaultEndHoursInput = document.getElementById('settings-todo-default-end-hours');
+const settingsTodoHoursPerDayInput = document.getElementById('settings-todo-hours-per-day');
 
 // AI Elements
 const aiDock = document.getElementById('ai-dock');
@@ -296,94 +311,107 @@ const ALL_MODELS = {
     openai: {
         name: 'OpenAI',
         models: [
+            { id: 'gpt-5.4', name: 'GPT-5.4' },
+            { id: 'gpt-5.4-pro', name: 'GPT-5.4 Pro' },
+            { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' },
+            { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano' },
+            { id: 'gpt-5.2', name: 'GPT-5.2' },
             { id: 'gpt-5.1', name: 'GPT-5.1' },
             { id: 'gpt-5', name: 'GPT-5' },
+            { id: 'gpt-5-mini', name: 'GPT-5 Mini' },
+            { id: 'o3-pro', name: 'o3-pro' },
+            { id: 'o3', name: 'o3' },
+            { id: 'o4-mini', name: 'o4-mini' },
+            { id: 'gpt-4.1', name: 'GPT-4.1' },
+            { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini' },
+            { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano' },
             { id: 'gpt-4o', name: 'GPT-4o' },
-            { id: 'gpt-o4-mini', name: 'GPT-o4-mini' },
-            { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
-            { id: 'gpt-4', name: 'GPT-4' },
-            { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
-            { id: 'text-embedding-ada-002', name: 'Text Embedding Ada 002' }
+            { id: 'gpt-4o-mini', name: 'GPT-4o Mini' }
         ]
     },
     gemini: {
         name: 'Google Gemini',
         models: [
-            { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro' },
+            { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
+            { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' },
+            { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite' },
             { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-            { id: 'gemini-ultra', name: 'Gemini Ultra' },
-            { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
-            { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
-            { id: 'gemma-2', name: 'Gemma 2' }
+            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+            { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
+            { id: 'gemma-3', name: 'Gemma 3' }
         ]
     },
     anthropic: {
         name: 'Anthropic',
         models: [
-            { id: 'claude-opus-4.5', name: 'Claude Opus 4.5' },
-            { id: 'claude-4.1', name: 'Claude 4.1' },
-            { id: 'claude-4', name: 'Claude 4' },
-            { id: 'claude-3-7-sonnet', name: 'Claude 3.7 Sonnet' },
-            { id: 'claude-3-5-sonnet-20240620', name: 'Claude 3.5 Sonnet' },
-            { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
-            { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet' },
-            { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku' }
+            { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+            { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+            { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+            { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
+            { id: 'claude-opus-4-20250514', name: 'Claude Opus 4' },
+            { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet' },
+            { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
+            { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' }
         ]
     },
     xai: {
         name: 'xAI (Grok)',
         models: [
-            { id: 'grok-5', name: 'Grok 5' },
-            { id: 'grok-4', name: 'Grok-4' },
-            { id: 'grok-beta', name: 'Grok Beta' }
+            { id: 'grok-4.20', name: 'Grok 4.20' },
+            { id: 'grok-4', name: 'Grok 4' },
+            { id: 'grok-3', name: 'Grok 3' },
+            { id: 'grok-3-mini', name: 'Grok 3 Mini' }
         ]
     },
     deepseek: {
         name: 'DeepSeek',
         models: [
-            { id: 'deepseek-v3.2', name: 'DeepSeek-V3.2' },
-            { id: 'deepseek-v3.2-speciale', name: 'DeepSeek-V3.2-Speciale' },
-            { id: 'deepseek-v3.1', name: 'DeepSeek V3.1' },
-            { id: 'deepseek-r1', name: 'DeepSeek-R1' },
-            { id: 'deepseek-chat', name: 'DeepSeek Chat' },
-            { id: 'deepseek-coder', name: 'DeepSeek Coder' }
+            { id: 'deepseek-chat', name: 'DeepSeek Chat (V3.2)' },
+            { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner (V3.2)' }
         ]
     },
     mistral: {
         name: 'Mistral AI',
         models: [
-            { id: 'mistral-medium-3', name: 'Mistral Medium 3' },
-            { id: 'pixtral-large', name: 'Pixtral Large' },
-            { id: 'open-mixtral-8x22b', name: 'Mistral-8x22b' },
+            { id: 'mistral-small-latest', name: 'Mistral Small 4' },
+            { id: 'mistral-large-latest', name: 'Mistral Large 3' },
+            { id: 'mistral-medium-latest', name: 'Mistral Medium 3.1' },
+            { id: 'magistral-medium-latest', name: 'Magistral Medium 1.2' },
+            { id: 'magistral-small-latest', name: 'Magistral Small 1.2' },
             { id: 'codestral-latest', name: 'Codestral' },
-            { id: 'mistral-large-latest', name: 'Mistral Large' },
-            { id: 'mistral-medium-latest', name: 'Mistral Medium' },
-            { id: 'mistral-small-latest', name: 'Mistral Small' }
+            { id: 'devstral-latest', name: 'Devstral 2' },
+            { id: 'pixtral-large-latest', name: 'Pixtral Large' },
+            { id: 'open-mistral-nemo', name: 'Mistral Nemo 12B' }
         ]
     },
     cohere: {
         name: 'Cohere',
         models: [
-            { id: 'command-r-plus', name: 'Command R+' },
-            { id: 'command-r', name: 'Command R' },
-            { id: 'command', name: 'Command' }
+            { id: 'command-a-03-2025', name: 'Command A' },
+            { id: 'command-a-reasoning-08-2025', name: 'Command A Reasoning' },
+            { id: 'command-a-vision-07-2025', name: 'Command A Vision' },
+            { id: 'command-r7b-12-2024', name: 'Command R7B' },
+            { id: 'command-r-plus-08-2024', name: 'Command R+' },
+            { id: 'command-r-08-2024', name: 'Command R' }
         ]
     },
     huggingface: {
         name: 'Hugging Face (Open Models)',
         models: [
-            { id: 'meta-llama/Llama-3-70b-chat-hf', name: 'Llama 3 70B' },
-            { id: 'meta-llama/Llama-3-8b-chat-hf', name: 'Llama 3 8B' },
-            { id: 'microsoft/Phi-3-mini-4k-instruct', name: 'Phi-3 Mini' },
-            { id: 'bigscience/bloom', name: 'Bloom' },
-            { id: 'mistralai/Mistral-7B-Instruct-v0.2', name: 'Mistral 7B' },
-            { id: 'google/gemma-7b-it', name: 'Gemma 7B' }
+            { id: 'meta-llama/Llama-4-Scout-17B-16E-Instruct', name: 'Llama 4 Scout 17B' },
+            { id: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct', name: 'Llama 4 Maverick 17B' },
+            { id: 'meta-llama/Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B' },
+            { id: 'meta-llama/Llama-3.1-8B-Instruct', name: 'Llama 3.1 8B' },
+            { id: 'microsoft/Phi-4', name: 'Phi-4' },
+            { id: 'mistralai/Mistral-Small-24B-Instruct-2501', name: 'Mistral Small 24B' },
+            { id: 'google/gemma-3-27b-it', name: 'Gemma 3 27B' }
         ]
     },
     nvidia: {
         name: 'NVIDIA',
         models: [
-            { id: 'nvidia/alpamayo-r1', name: 'Alpamayo-R1' },
+            { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', name: 'Nemotron Super 49B' },
+            { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B' },
             { id: 'nvidia/nemotron-4-340b-instruct', name: 'Nemotron-4 340B' }
         ]
     },
@@ -391,9 +419,10 @@ const ALL_MODELS = {
         name: 'Alibaba Cloud (Qwen)',
         models: [
             { id: 'qwen-max', name: 'Qwen-Max (Qwen 3)' },
-            { id: 'qwen-plus', name: 'Qwen-Plus' },
-            { id: 'qwen-turbo', name: 'Qwen-Turbo' },
-            { id: 'qwen1.5-110b-chat', name: 'Qwen1.5 110B' }
+            { id: 'qwen-plus', name: 'Qwen-Plus (Qwen 3)' },
+            { id: 'qwen-turbo', name: 'Qwen-Turbo (Qwen 3)' },
+            { id: 'qwen2.5-72b-instruct', name: 'Qwen 2.5 72B' },
+            { id: 'qwq-plus', name: 'QwQ-Plus (Reasoning)' }
         ]
     }
 };
@@ -447,6 +476,10 @@ let todos = [];
 let currentTheme = 'light'; // 'light', 'dark'
 let currentTodoPage = 1;
 const todosPerPage = 15;
+let todoAdvancedView = false;
+let todoDefaultEndHours = 56;
+let todoHoursPerDay = 8;
+let todoPopupHideTimer = null;
 
 // --- Initialization ---
 // Wait for DOM, Quill, highlight.js, and SQLite DB to load
@@ -1835,7 +1868,17 @@ function handleMarkdownShortcuts(quill, text, lineStart, offset) {
 
 async function init() {
     // Load settings from SQLite
-    const settings = DevNotebookDB.getSettings(['theme', 'activeWorkspaceId', 'activeProjectId', 'activeItemType', 'aiDockVisible']);
+    const settings = DevNotebookDB.getSettings([
+        'theme',
+        'activeWorkspaceId',
+        'activeProjectId',
+        'activeItemType',
+        'aiDockVisible',
+        'todoAdvancedView',
+        'todoDefaultEndHours',
+        'todoHoursPerDay',
+        'todoDefaultEndOffsetDays'
+    ]);
 
     // Theme
     currentTheme = settings.theme || 'light';
@@ -1847,8 +1890,34 @@ async function init() {
         id: t.id, text: t.text,
         completed: !!t.completed,
         createdAt: t.created_at,
-        completedAt: t.completed_at
+        completedAt: t.completed_at,
+        estimatedMinutes: Number(t.estimated_minutes || 0),
+        dueDate: t.due_date || '',
+        description: t.description || ''
     }));
+
+    todoAdvancedView = !!settings.todoAdvancedView;
+
+    // Backward-compatible migration: old setting stored days.
+    const legacyOffsetDays = Number(settings.todoDefaultEndOffsetDays);
+    const parsedDefaultHours = Number(settings.todoDefaultEndHours);
+    if (Number.isFinite(parsedDefaultHours) && parsedDefaultHours >= 0) {
+        todoDefaultEndHours = parsedDefaultHours;
+    } else if (Number.isFinite(legacyOffsetDays) && legacyOffsetDays >= 0) {
+        todoDefaultEndHours = legacyOffsetDays * todoHoursPerDay;
+    }
+
+    const parsedHoursPerDay = Number(settings.todoHoursPerDay);
+    if (Number.isFinite(parsedHoursPerDay) && parsedHoursPerDay > 0) {
+        todoHoursPerDay = parsedHoursPerDay;
+    }
+    if (settingsTodoDefaultEndHoursInput) {
+        settingsTodoDefaultEndHoursInput.value = String(todoDefaultEndHours);
+    }
+    if (settingsTodoHoursPerDayInput) {
+        settingsTodoHoursPerDayInput.value = String(todoHoursPerDay);
+    }
+    applyTodoViewMode();
     renderTodoList();
 
     // Load workspaces from SQLite
@@ -3941,8 +4010,30 @@ if (_syncChannel) {
                 id: t.id, text: t.text,
                 completed: !!t.completed,
                 createdAt: t.created_at,
-                completedAt: t.completed_at
+                completedAt: t.completed_at,
+                estimatedMinutes: Number(t.estimated_minutes || 0),
+                dueDate: t.due_date || '',
+                description: t.description || ''
             }));
+
+            todoAdvancedView = !!DevNotebookDB.getSetting('todoAdvancedView', false);
+            const updatedHoursPerDay = Number(DevNotebookDB.getSetting('todoHoursPerDay', 8));
+            if (Number.isFinite(updatedHoursPerDay) && updatedHoursPerDay > 0) {
+                todoHoursPerDay = updatedHoursPerDay;
+            }
+
+            const updatedDefaultHours = Number(DevNotebookDB.getSetting('todoDefaultEndHours', 56));
+            if (Number.isFinite(updatedDefaultHours) && updatedDefaultHours >= 0) {
+                todoDefaultEndHours = updatedDefaultHours;
+            }
+
+            if (settingsTodoDefaultEndHoursInput) {
+                settingsTodoDefaultEndHoursInput.value = String(todoDefaultEndHours);
+            }
+            if (settingsTodoHoursPerDayInput) {
+                settingsTodoHoursPerDayInput.value = String(todoHoursPerDay);
+            }
+            applyTodoViewMode();
             renderTodoList();
 
             const newTheme = DevNotebookDB.getSetting('theme', 'system');
@@ -4006,14 +4097,323 @@ function escapeHtml(text) {
 
 
 // --- Todo Management ---
-function createTodo(text) {
+function normalizeTodoEstimate(hours, minutes) {
+    const safeHours = Math.max(0, Number(hours) || 0);
+    const safeMinutes = Math.max(0, Number(minutes) || 0);
+    const carryHours = Math.floor(safeMinutes / 60);
+    const remainingMinutes = safeMinutes % 60;
+    return ((safeHours + carryHours) * 60) + remainingMinutes;
+}
+
+function formatEstimatedTime(totalMinutes) {
+    const mins = Number(totalMinutes) || 0;
+    if (mins <= 0) return 'No estimate';
+    const hours = Math.floor(mins / 60);
+    const minutes = mins % 60;
+    if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h`;
+    return `${minutes}m`;
+}
+
+function formatDueDate(dueDate) {
+    if (!dueDate) return 'No due date';
+    const date = new Date(`${dueDate}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return 'No due date';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function getTodoDescriptionInputHtml() {
+    if (!newTodoDescriptionInput) return '';
+
+    const textContent = (newTodoDescriptionInput.textContent || '').trim();
+    const htmlContent = (newTodoDescriptionInput.innerHTML || '').trim();
+
+    // Treat empty editor wrappers as empty content.
+    if (!textContent && /^<br\s*\/?>(\s|&nbsp;)*$/i.test(htmlContent)) return '';
+    if (!textContent && /^<div><br\s*\/?><\/div>$/i.test(htmlContent)) return '';
+
+    return htmlContent;
+}
+
+function initTodoDescriptionEditor() {
+    if (!newTodoDescriptionInput || !todoDescriptionToolbar) return;
+
+    todoDescriptionToolbar.querySelectorAll('[data-cmd]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const cmd = btn.dataset.cmd;
+            if (!cmd) return;
+
+            newTodoDescriptionInput.focus();
+
+            if (cmd === 'createLink') {
+                const url = prompt('Enter URL', 'https://');
+                if (url) document.execCommand('createLink', false, url);
+                return;
+            }
+
+            if (cmd === 'clear') {
+                document.execCommand('removeFormat');
+                document.execCommand('unlink');
+                return;
+            }
+
+            document.execCommand(cmd, false, null);
+        });
+    });
+
+    newTodoDescriptionInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            addTodo();
+        }
+    });
+}
+
+function sanitizeTodoDescriptionHtml(rawHtml) {
+    const allowedTags = new Set([
+        'B', 'STRONG', 'I', 'EM', 'U', 'S', 'BR', 'P', 'UL', 'OL', 'LI',
+        'CODE', 'PRE', 'BLOCKQUOTE', 'A', 'SPAN', 'DIV'
+    ]);
+
+    const template = document.createElement('template');
+    template.innerHTML = rawHtml;
+
+    const sanitizeNode = (node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            const tag = node.tagName;
+
+            if (!allowedTags.has(tag)) {
+                const fragment = document.createDocumentFragment();
+                while (node.firstChild) {
+                    fragment.appendChild(node.firstChild);
+                }
+                node.replaceWith(fragment);
+                return;
+            }
+
+            for (const attr of [...node.attributes]) {
+                const attrName = attr.name.toLowerCase();
+                if (attrName.startsWith('on') || attrName === 'style') {
+                    node.removeAttribute(attr.name);
+                }
+            }
+
+            if (tag === 'A') {
+                const href = node.getAttribute('href') || '';
+                const safeHref = /^(https?:|mailto:|tel:|#|\/)/i.test(href.trim());
+                if (!safeHref) {
+                    node.removeAttribute('href');
+                }
+                node.setAttribute('rel', 'noopener noreferrer');
+                node.setAttribute('target', '_blank');
+            } else {
+                for (const attr of [...node.attributes]) {
+                    node.removeAttribute(attr.name);
+                }
+            }
+        } else if (node.nodeType === Node.COMMENT_NODE) {
+            node.remove();
+            return;
+        }
+
+        [...node.childNodes].forEach(sanitizeNode);
+    };
+
+    [...template.content.childNodes].forEach(sanitizeNode);
+    return template.innerHTML;
+}
+
+function formatTodoDescriptionHtml(description) {
+    if (!description) return '';
+    const raw = String(description);
+    const hasHtml = /<[^>]+>/.test(raw);
+    if (!hasHtml) {
+        // Preserve line breaks for plain text via CSS white-space.
+        return escapeHtml(raw);
+    }
+    return sanitizeTodoDescriptionHtml(raw);
+}
+
+function getDefaultDueDateFromHours(offsetHours) {
+    const hours = Number(offsetHours);
+    if (!Number.isFinite(hours) || hours <= 0) return '';
+    const safeHoursPerDay = Number.isFinite(todoHoursPerDay) && todoHoursPerDay > 0 ? todoHoursPerDay : 8;
+    const days = Math.ceil(hours / safeHoursPerDay);
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return date.toISOString().slice(0, 10);
+}
+
+function applyTodoViewMode() {
+    if (!todoSidebarEl) return;
+
+    todoSidebarEl.classList.toggle('advanced-view', !!todoAdvancedView);
+    if (todoAdvancedToggleBtn) {
+        todoAdvancedToggleBtn.classList.toggle('active', !!todoAdvancedView);
+        todoAdvancedToggleBtn.title = todoAdvancedView ? 'Disable Advanced View' : 'Enable Advanced View';
+    }
+}
+
+function hideTodoDetailPopup() {
+    if (todoPopupHideTimer) {
+        clearTimeout(todoPopupHideTimer);
+        todoPopupHideTimer = null;
+    }
+    if (!todoDetailPopup) return;
+    todoDetailPopup.classList.remove('visible');
+    todoDetailPopup.setAttribute('aria-hidden', 'true');
+}
+
+function scheduleHideTodoDetailPopup(delay = 160) {
+    if (todoPopupHideTimer) clearTimeout(todoPopupHideTimer);
+    todoPopupHideTimer = setTimeout(() => {
+        hideTodoDetailPopup();
+    }, delay);
+}
+
+function positionTodoDetailPopup(anchorEl) {
+    if (!todoDetailPopup || !anchorEl) return;
+
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const sidebarRect = todoSidebarEl ? todoSidebarEl.getBoundingClientRect() : null;
+    const popupRect = todoDetailPopup.getBoundingClientRect();
+
+    let left = (sidebarRect ? sidebarRect.left : anchorRect.left) - popupRect.width - 12;
+    if (left < 8) {
+        const fallbackLeft = (sidebarRect ? sidebarRect.right : anchorRect.right) + 12;
+        left = Math.min(fallbackLeft, window.innerWidth - popupRect.width - 8);
+    }
+
+    let top = anchorRect.top;
+    top = Math.max(8, Math.min(top, window.innerHeight - popupRect.height - 8));
+
+    todoDetailPopup.style.left = `${left}px`;
+    todoDetailPopup.style.top = `${top}px`;
+}
+
+function showTodoDetailPopup(todo, anchorEl) {
+    if (!todoDetailPopup || !todo || !anchorEl) return;
+
+    if (todoPopupHideTimer) {
+        clearTimeout(todoPopupHideTimer);
+        todoPopupHideTimer = null;
+    }
+
+    const timelineProgress = Math.round(getTodoDateProgress(todo));
+    const timelineLabel = getTodoDateProgressLabel(todo, timelineProgress);
+    const createdStr = todo.createdAt
+        ? new Date(todo.createdAt).toLocaleString()
+        : 'Unknown';
+    const dueStr = todo.dueDate ? formatDueDate(todo.dueDate) : 'No due date';
+    const completedStr = todo.completedAt
+        ? new Date(todo.completedAt).toLocaleString()
+        : 'Not completed';
+
+    const descriptionHtml = todo.description
+        ? `<div class="todo-popup-description">${formatTodoDescriptionHtml(todo.description)}</div>`
+        : '<div class="todo-popup-description" style="color:var(--text-muted);">No description</div>';
+
+    todoDetailPopup.innerHTML = `
+        <div class="todo-popup-title">${escapeHtml(todo.text)}</div>
+        <div class="todo-popup-meta">
+            <span class="todo-chip">${formatEstimatedTime(todo.estimatedMinutes)}</span>
+            <span class="todo-chip">${dueStr}</span>
+            <span class="todo-chip ${todo.completed ? 'success' : ''}">${todo.completed ? 'Completed' : 'Active'}</span>
+        </div>
+        ${descriptionHtml}
+        <div class="todo-popup-grid">
+            <div class="todo-popup-kv"><span class="k">Timeline</span><span class="v">${timelineLabel} (${timelineProgress}%)</span></div>
+            <div class="todo-popup-kv"><span class="k">Created</span><span class="v">${escapeHtml(createdStr)}</span></div>
+            <div class="todo-popup-kv"><span class="k">Due</span><span class="v">${escapeHtml(dueStr)}</span></div>
+            <div class="todo-popup-kv"><span class="k">Completed At</span><span class="v">${escapeHtml(completedStr)}</span></div>
+        </div>
+    `;
+
+    todoDetailPopup.setAttribute('aria-hidden', 'false');
+    todoDetailPopup.classList.add('visible');
+    positionTodoDetailPopup(anchorEl);
+}
+
+if (todoDetailPopup) {
+    todoDetailPopup.addEventListener('mouseenter', () => {
+        if (todoPopupHideTimer) {
+            clearTimeout(todoPopupHideTimer);
+            todoPopupHideTimer = null;
+        }
+    });
+    todoDetailPopup.addEventListener('mouseleave', () => {
+        scheduleHideTodoDetailPopup(120);
+    });
+}
+
+function getTodoDateProgress(todo) {
+    if (todo.completed) return 100;
+    if (!todo.dueDate) return 0;
+
+    const createdAt = Number(todo.createdAt) || Date.now();
+    const start = createdAt;
+    const end = new Date(`${todo.dueDate}T23:59:59`).getTime();
+    if (!Number.isFinite(end)) return 0;
+    if (end <= start) return Date.now() >= end ? 100 : 0;
+
+    const now = Date.now();
+    const progress = ((now - start) / (end - start)) * 100;
+    return Math.max(0, Math.min(100, progress));
+}
+
+function getTodoDateProgressLabel(todo, progress) {
+    if (todo.completed) return 'Completed';
+    if (!todo.dueDate) return 'No timeline';
+
+    const dueTs = new Date(`${todo.dueDate}T23:59:59`).getTime();
+    if (Date.now() > dueTs) return 'Overdue';
+    if (progress <= 0) return 'Not started';
+    if (progress >= 85) return 'Due soon';
+    if (progress >= 60) return 'In progress';
+    return 'Planned';
+}
+
+function updateTodoOverview() {
+    if (!todoOverviewFill || !todoOverviewValue || !todoOverviewLabel) return;
+
+    if (todos.length === 0) {
+        todoOverviewLabel.textContent = 'Progress';
+        todoOverviewValue.textContent = '0%';
+        todoOverviewFill.style.width = '0%';
+        return;
+    }
+
+    const totalEstimate = todos.reduce((sum, todo) => sum + (Number(todo.estimatedMinutes) || 0), 0);
+    const completedEstimate = todos
+        .filter(todo => todo.completed)
+        .reduce((sum, todo) => sum + (Number(todo.estimatedMinutes) || 0), 0);
+
+    let completionRatio;
+    if (totalEstimate > 0) {
+        completionRatio = completedEstimate / totalEstimate;
+        todoOverviewLabel.textContent = `Done ${formatEstimatedTime(completedEstimate)} / ${formatEstimatedTime(totalEstimate)}`;
+    } else {
+        const completedCount = todos.filter(todo => todo.completed).length;
+        completionRatio = completedCount / todos.length;
+        todoOverviewLabel.textContent = `${completedCount} of ${todos.length} tasks done`;
+    }
+
+    const percent = Math.round(Math.max(0, Math.min(1, completionRatio)) * 100);
+    todoOverviewValue.textContent = `${percent}%`;
+    todoOverviewFill.style.width = `${percent}%`;
+}
+
+function createTodo(text, options = {}) {
     if (!text) return;
 
     const newTodo = {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
         text: text,
         completed: false,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        estimatedMinutes: Number(options.estimatedMinutes) || 0,
+        dueDate: options.dueDate || '',
+        description: options.description || ''
     };
 
     todos.unshift(newTodo);
@@ -4025,8 +4425,30 @@ function createTodo(text) {
 function addTodo() {
     const text = newTodoInput.value.trim();
     if (!text) return;
-    createTodo(text);
+
+    let estimatedMinutes = 0;
+    let dueDate = '';
+    let description = '';
+    if (todoAdvancedView) {
+        estimatedMinutes = normalizeTodoEstimate(
+            newTodoHoursInput ? newTodoHoursInput.value : 0,
+            newTodoMinutesInput ? newTodoMinutesInput.value : 0
+        );
+        dueDate = newTodoDueDateInput ? newTodoDueDateInput.value : '';
+        description = getTodoDescriptionInputHtml();
+        if (!dueDate && estimatedMinutes > 0) {
+            dueDate = getDefaultDueDateFromHours(estimatedMinutes / 60);
+        }
+    } else {
+        dueDate = getDefaultDueDateFromHours(todoDefaultEndHours);
+    }
+
+    createTodo(text, { estimatedMinutes, dueDate, description });
     newTodoInput.value = '';
+    if (newTodoHoursInput) newTodoHoursInput.value = '';
+    if (newTodoMinutesInput) newTodoMinutesInput.value = '';
+    if (newTodoDueDateInput) newTodoDueDateInput.value = '';
+    if (newTodoDescriptionInput) newTodoDescriptionInput.innerHTML = '';
 }
 
 function toggleTodo(id) {
@@ -4042,6 +4464,58 @@ function toggleTodo(id) {
         notifySyncPeers();
         renderTodoList();
     }
+}
+
+function editTodo(id) {
+    const todo = todos.find(t => t.id === id);
+    if (!todo) return;
+
+    const updatedText = prompt('Edit task title', todo.text || '');
+    if (updatedText === null) return;
+    const nextText = updatedText.trim();
+    if (!nextText) {
+        showNotification('Task title cannot be empty', 'error');
+        return;
+    }
+
+    const existingDesc = todo.description || '';
+    const updatedDescription = prompt('Edit description (HTML supported)', existingDesc);
+    if (updatedDescription === null) return;
+
+    const existingHours = Math.floor((Number(todo.estimatedMinutes) || 0) / 60);
+    const existingMinutes = (Number(todo.estimatedMinutes) || 0) % 60;
+
+    const updatedHours = prompt('Estimated hours', String(existingHours));
+    if (updatedHours === null) return;
+    const updatedMinutes = prompt('Estimated minutes', String(existingMinutes));
+    if (updatedMinutes === null) return;
+
+    const nextEstimatedMinutes = normalizeTodoEstimate(updatedHours, updatedMinutes);
+
+    const duePromptDefault = todo.dueDate || '';
+    const updatedDueDate = prompt('Due date (YYYY-MM-DD) - leave empty to clear', duePromptDefault);
+    if (updatedDueDate === null) return;
+    const nextDueDate = updatedDueDate.trim();
+
+    if (nextDueDate && Number.isNaN(new Date(`${nextDueDate}T00:00:00`).getTime())) {
+        showNotification('Invalid due date format. Use YYYY-MM-DD', 'error');
+        return;
+    }
+
+    todo.text = nextText;
+    todo.description = updatedDescription;
+    todo.estimatedMinutes = nextEstimatedMinutes;
+    todo.dueDate = nextDueDate;
+
+    DevNotebookDB.updateTodo(id, {
+        text: nextText,
+        description: updatedDescription,
+        estimatedMinutes: nextEstimatedMinutes,
+        dueDate: nextDueDate || null
+    });
+    notifySyncPeers();
+    renderTodoList();
+    showNotification('Todo updated', 'success');
 }
 
 function deleteTodo(id) {
@@ -4203,9 +4677,18 @@ if (aiDock) {
 function renderTodoList() {
     todoListEl.innerHTML = '';
     updateTodoCountBadge();
+    updateTodoOverview();
 
-    // Sort: active todos first, then completed by completion date
+    // Sort: active todos first, then by nearest due date, then newest.
     const sortedTodos = [...todos].sort((a, b) => {
+        if (a.completed !== b.completed) {
+            return a.completed ? 1 : -1;
+        }
+
+        const aDue = a.dueDate ? new Date(`${a.dueDate}T23:59:59`).getTime() : Number.POSITIVE_INFINITY;
+        const bDue = b.dueDate ? new Date(`${b.dueDate}T23:59:59`).getTime() : Number.POSITIVE_INFINITY;
+        if (aDue !== bDue) return aDue - bDue;
+
         if (a.completed === b.completed) {
             return (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt);
         }
@@ -4229,22 +4712,105 @@ function renderTodoList() {
         const li = document.createElement('li');
         li.className = `todo-item ${todo.completed ? 'completed' : ''}`;
 
-        let dateInfo = '';
+        if (!todoAdvancedView) {
+            li.innerHTML = `
+                <input type="checkbox" ${todo.completed ? 'checked' : ''}>
+                <div class="todo-content">
+                    <div class="todo-title-row">
+                        <span class="todo-title">${escapeHtml(todo.text)}</span>
+                    </div>
+                </div>
+                <button class="edit-todo-btn" title="Edit task">
+                    <span class="material-symbols-rounded" style="font-size: 16px;">edit</span>
+                </button>
+                <button class="delete-todo-btn" title="Delete task">
+                    <span class="material-symbols-rounded" style="font-size: 16px;">close</span>
+                </button>
+            `;
+
+            const simpleCheckbox = li.querySelector('input');
+            simpleCheckbox.addEventListener('change', () => toggleTodo(todo.id));
+
+            const simpleEditBtn = li.querySelector('.edit-todo-btn');
+            simpleEditBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                editTodo(todo.id);
+            });
+
+            const simpleDeleteBtn = li.querySelector('.delete-todo-btn');
+            simpleDeleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteTodo(todo.id);
+            });
+
+            todoListEl.appendChild(li);
+            return;
+        }
+
+        let completionInfo = '';
         if (todo.completed && todo.completedAt) {
             const date = new Date(todo.completedAt);
-            dateInfo = `<small style="color: var(--text-muted); font-size: 0.8em; margin-left: 8px;">✓ ${date.toLocaleDateString()}</small>`;
+            completionInfo = `<span class="todo-chip success">Done ${date.toLocaleDateString()}</span>`;
         }
+
+        const dueInfo = todo.dueDate
+            ? `<span class="todo-chip">Due ${formatDueDate(todo.dueDate)}</span>`
+            : `<span class="todo-chip muted">No due date</span>`;
+
+        const estimateInfo = `<span class="todo-chip">${formatEstimatedTime(todo.estimatedMinutes)}</span>`;
+        const timelineProgress = Math.round(getTodoDateProgress(todo));
+        const timelineLabel = getTodoDateProgressLabel(todo, timelineProgress);
+        const timelineClass = todo.completed
+            ? 'done'
+            : (timelineLabel === 'Overdue' ? 'overdue' : (timelineLabel === 'Due soon' ? 'soon' : 'normal'));
 
         li.innerHTML = `
             <input type="checkbox" ${todo.completed ? 'checked' : ''}>
-            <span>${escapeHtml(todo.text)}${dateInfo}</span>
-            <button class="delete-todo-btn">
+            <div class="todo-content">
+                <div class="todo-title-row">
+                    <span class="todo-title">${escapeHtml(todo.text)}</span>
+                    ${completionInfo}
+                </div>
+                <div class="todo-meta-row">
+                    ${estimateInfo}
+                    ${dueInfo}
+                </div>
+                <div class="todo-progress-wrap">
+                    <div class="todo-progress-head">
+                        <span>${timelineLabel}</span>
+                        <span>${timelineProgress}%</span>
+                    </div>
+                    <div class="todo-progress-track ${timelineClass}">
+                        <div class="todo-progress-fill" style="width:${timelineProgress}%"></div>
+                    </div>
+                </div>
+            </div>
+            <button class="edit-todo-btn" title="Edit task">
+                <span class="material-symbols-rounded" style="font-size: 16px;">edit</span>
+            </button>
+            <button class="delete-todo-btn" title="Delete task">
                 <span class="material-symbols-rounded" style="font-size: 16px;">close</span>
             </button>
         `;
 
         const checkbox = li.querySelector('input');
         checkbox.addEventListener('change', () => toggleTodo(todo.id));
+
+        li.addEventListener('mouseenter', () => {
+            showTodoDetailPopup(todo, li);
+        });
+        li.addEventListener('mousemove', () => {
+            positionTodoDetailPopup(li);
+        });
+        li.addEventListener('mouseleave', () => {
+            scheduleHideTodoDetailPopup(180);
+        });
+
+        const editBtn = li.querySelector('.edit-todo-btn');
+        editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            editTodo(todo.id);
+        });
 
         const deleteBtn = li.querySelector('.delete-todo-btn');
         deleteBtn.addEventListener('click', (e) => {
@@ -4393,6 +4959,9 @@ function applyTheme(theme) {
     }
 }
 
+window.addEventListener('scroll', hideTodoDetailPopup, true);
+window.addEventListener('resize', hideTodoDetailPopup);
+
 
 
       // Generate a 20-char hex roomId (same size as the app’s default: 10 random bytes)
@@ -4436,6 +5005,7 @@ function openDrawView(forceRefresh = true, targetUrl = null) {
     lastPrimaryView = { type: activeItemType, itemId: activeItemId };
     const link = targetUrl || getDrawCollabLinkUrl(forceRefresh);
     photoeditor.classList.remove('active');
+    if (expiryFrame) expiryFrame.classList.remove('active');
     excalidraw.setAttribute('src', "");
     setTimeout(() => {
         
@@ -4482,10 +5052,47 @@ closeTodoBtn.addEventListener('click', () => {
 
 clearAllTodosBtn.addEventListener('click', clearAllTodos);
 
+if (todoAdvancedToggleBtn) {
+    todoAdvancedToggleBtn.addEventListener('click', () => {
+        todoAdvancedView = !todoAdvancedView;
+        applyTodoViewMode();
+        DevNotebookDB.setSetting('todoAdvancedView', todoAdvancedView);
+        notifySyncPeers();
+        renderTodoList();
+    });
+}
+
 addTodoBtn.addEventListener('click', addTodo);
+initTodoDescriptionEditor();
+
 newTodoInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') addTodo();
 });
+if (newTodoHoursInput) {
+    newTodoHoursInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') addTodo();
+    });
+}
+if (newTodoMinutesInput) {
+    newTodoMinutesInput.addEventListener('input', () => {
+        const val = Math.max(0, Number(newTodoMinutesInput.value) || 0);
+        if (val > 59) {
+            newTodoMinutesInput.value = String(val % 60);
+            if (newTodoHoursInput) {
+                const currentHours = Math.max(0, Number(newTodoHoursInput.value) || 0);
+                newTodoHoursInput.value = String(currentHours + Math.floor(val / 60));
+            }
+        }
+    });
+    newTodoMinutesInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') addTodo();
+    });
+}
+if (newTodoDueDateInput) {
+    newTodoDueDateInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') addTodo();
+    });
+}
 
 // Todo pagination
 todoPrevBtn.addEventListener('click', () => {
@@ -4509,6 +5116,12 @@ settingsBtn.addEventListener('click', () => {
     settingsModal.style.display = 'block';
     // Load AI settings into inputs when opening settings
     loadAISettings();
+    if (settingsTodoDefaultEndHoursInput) {
+        settingsTodoDefaultEndHoursInput.value = String(todoDefaultEndHours);
+    }
+    if (settingsTodoHoursPerDayInput) {
+        settingsTodoHoursPerDayInput.value = String(todoHoursPerDay);
+    }
 });
 
 closeSettingsBtn.addEventListener('click', () => {
@@ -4549,9 +5162,30 @@ openPhotoeditorBtn.addEventListener('click', () => {
     backToAppBtn.classList.add('active');
     fabAddBtn.classList.add('hide');
 });
+if (openExpiryBtn) openExpiryBtn.addEventListener('click', () => {
+    lastPrimaryView = { type: activeItemType, itemId: activeItemId };
+    // Lazy-load the iframe on first open
+    if (expiryFrame && !expiryFrame.getAttribute('src')) {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+            || document.body.classList.contains('dark-mode');
+        const base = expiryFrame.getAttribute('data-src') || 'expiry.html';
+        expiryFrame.setAttribute('src', base + (isDark ? '?theme=dark' : ''));
+    } else if (expiryFrame) {
+        // Sync current theme to iframe
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+            || document.body.classList.contains('dark-mode');
+        try { expiryFrame.contentWindow.postMessage({ type: 'theme', theme: isDark ? 'dark' : 'light' }, '*'); } catch (e) {}
+    }
+    excalidraw.classList.remove('active');
+    photoeditor.classList.remove('active');
+    if (expiryFrame) expiryFrame.classList.add('active');
+    backToAppBtn.classList.add('active');
+    fabAddBtn.classList.add('hide');
+});
 backToAppBtn.addEventListener('click', () => {
     excalidraw.classList.remove('active');
     photoeditor.classList.remove('active');
+    if (expiryFrame) expiryFrame.classList.remove('active');
     backToAppBtn.classList.remove('active');
     fabAddBtn.classList.remove('hide');
     appContainer.classList.remove('sidebar-open');
@@ -4803,12 +5437,17 @@ function importNotebookFile(file) {
             // 5. Import Todos
             if (data.todos && Array.isArray(data.todos)) {
                 for (const todo of data.todos) {
+                    const hours = Number(todo.estimatedHours || 0);
+                    const minutes = Number(todo.estimatedMinutes || 0);
                     const newTodo = {
                         id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
                         text: todo.text,
                         completed: !!todo.completed,
                         createdAt: todo.createdAt || Date.now(),
-                        completedAt: todo.completedAt || null
+                        completedAt: todo.completedAt || null,
+                        estimatedMinutes: normalizeTodoEstimate(hours, minutes),
+                        dueDate: todo.dueDate || '',
+                        description: todo.description || ''
                     };
                     todos.push(newTodo);
                     DevNotebookDB.createTodo(newTodo);
@@ -5133,7 +5772,24 @@ if (saveSettingsBtn) {
             DevNotebookDB.setSetting('userName', userNameInput.value.trim());
         }
 
+        if (settingsTodoDefaultEndHoursInput) {
+            const parsedDefaultHours = Number(settingsTodoDefaultEndHoursInput.value);
+            todoDefaultEndHours = Number.isFinite(parsedDefaultHours) && parsedDefaultHours >= 0
+                ? parsedDefaultHours
+                : 0;
+            DevNotebookDB.setSetting('todoDefaultEndHours', todoDefaultEndHours);
+        }
+
+        if (settingsTodoHoursPerDayInput) {
+            const parsedHoursPerDay = Number(settingsTodoHoursPerDayInput.value);
+            todoHoursPerDay = Number.isFinite(parsedHoursPerDay) && parsedHoursPerDay > 0
+                ? parsedHoursPerDay
+                : 8;
+            DevNotebookDB.setSetting('todoHoursPerDay', todoHoursPerDay);
+        }
+
         await DevNotebookDB.setSetting('aiSettings', aiSettings);
+        notifySyncPeers();
         updateModelDropdown();
         showNotification('Settings saved successfully!', 'success');
         settingsModal.style.display = 'none';

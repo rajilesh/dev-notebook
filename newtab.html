@@ -126,6 +126,11 @@
                             <span class="material-symbols-rounded">photo_camera</span>
                         </button>
                     </div>
+                    <div class="action-group">
+                        <button id="open-expiry-btn" class="icon-btn" title="Expiry Calendar">
+                            <span class="material-symbols-rounded">candlestick_chart</span>
+                        </button>
+                    </div>
                     <div class="action-divider editor-only"></div>
                     <div class="action-group editor-only">
                         <button id="share-btn" class="icon-btn" title="Share Current Note">
@@ -445,6 +450,9 @@
             <div class="todo-header">
                 <h3>To-Do List</h3>
                 <div class="todo-header-actions">
+                    <button id="todo-advanced-toggle-btn" class="icon-btn" title="Enable Advanced View">
+                        <span class="material-symbols-rounded">tune</span>
+                    </button>
                     <button id="clear-all-todos-btn" class="icon-btn" title="Clear All Todos">
                         <span class="material-symbols-rounded">delete_sweep</span>
                     </button>
@@ -459,6 +467,41 @@
                     <span class="material-symbols-rounded">add</span>
                 </button>
             </div>
+            <div class="todo-meta-inputs">
+                <div class="todo-time-group">
+                    <label for="new-todo-hours">Est. Time</label>
+                    <div class="todo-time-fields">
+                        <input type="number" id="new-todo-hours" min="0" max="999" placeholder="h">
+                        <input type="number" id="new-todo-minutes" min="0" max="59" placeholder="m">
+                    </div>
+                </div>
+                <div class="todo-date-group">
+                    <label for="new-todo-due-date">Due Date</label>
+                    <input type="date" id="new-todo-due-date">
+                </div>
+                <div class="todo-description-group">
+                    <label for="new-todo-description">Description</label>
+                    <div class="todo-description-toolbar" id="todo-description-toolbar">
+                        <button type="button" class="todo-editor-btn" data-cmd="bold" title="Bold"><span class="material-symbols-rounded">format_bold</span></button>
+                        <button type="button" class="todo-editor-btn" data-cmd="italic" title="Italic"><span class="material-symbols-rounded">format_italic</span></button>
+                        <button type="button" class="todo-editor-btn" data-cmd="underline" title="Underline"><span class="material-symbols-rounded">format_underlined</span></button>
+                        <button type="button" class="todo-editor-btn" data-cmd="insertUnorderedList" title="Bullet List"><span class="material-symbols-rounded">format_list_bulleted</span></button>
+                        <button type="button" class="todo-editor-btn" data-cmd="insertOrderedList" title="Numbered List"><span class="material-symbols-rounded">format_list_numbered</span></button>
+                        <button type="button" class="todo-editor-btn" data-cmd="createLink" title="Insert Link"><span class="material-symbols-rounded">link</span></button>
+                        <button type="button" class="todo-editor-btn" data-cmd="clear" title="Clear Formatting"><span class="material-symbols-rounded">format_clear</span></button>
+                    </div>
+                    <div id="new-todo-description" class="todo-description-editor" contenteditable="true" data-placeholder="Add details (HTML supported)..."></div>
+                </div>
+            </div>
+            <div class="todo-overview-card">
+                <div class="todo-overview-head">
+                    <span id="todo-overview-label">Progress</span>
+                    <span id="todo-overview-value">0%</span>
+                </div>
+                <div class="todo-overview-track">
+                    <div id="todo-overview-fill" class="todo-overview-fill"></div>
+                </div>
+            </div>
             <ul id="todo-list" class="todo-list">
                 <!-- Todo items will be injected here -->
             </ul>
@@ -472,6 +515,8 @@
                 </button>
             </div>
         </aside>
+
+        <div id="todo-detail-popup" class="todo-detail-popup" aria-hidden="true"></div>
     </div>
     <button id="fab-ai-btn" class="fab-btn" title="AI Assistant">
         <span class="material-symbols-rounded">auto_awesome</span>
@@ -494,6 +539,13 @@
                     <h3>Your Name</h3>
                     <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">Used to personalise the dashboard greeting.</p>
                     <input type="text" id="settings-user-name" class="input-field" placeholder="Enter your name">
+
+                    <h3 style="margin-top: 18px;">Todo Defaults</h3>
+                    <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">Used for simple todos when Advanced View is off.</p>
+                    <label for="settings-todo-default-end-hours" class="text-muted" style="font-size: 12px; display:block; margin-bottom: 6px;">Default End Time (hours)</label>
+                    <input type="number" id="settings-todo-default-end-hours" class="input-field" min="0" step="1" value="56" placeholder="56">
+                    <label for="settings-todo-hours-per-day" class="text-muted" style="font-size: 12px; display:block; margin-top: 10px; margin-bottom: 6px;">Work Hours Per Day</label>
+                    <input type="number" id="settings-todo-hours-per-day" class="input-field" min="1" step="1" value="8" placeholder="8">
                 </div>
 
                 <div class="settings-section">
@@ -973,8 +1025,9 @@
 
     <iframe src="photoeditor/photoeditor.html" id="photoeditor" class="photoeditor"></iframe>
     <iframe src="draw/index.html" id="excalidraw" class="excalidraw"></iframe>
+    <iframe id="expiry-frame" class="expiry-frame" data-src="expiry.html"></iframe>
 
-    <button id="back-to-app-btn" class="floating-nav-btn" title="Back to App"><span class="material-symbols-rounded" style="font-size:16px">arrow_back</span> Back</button>
+    <button id="back-to-app-btn" class="floating-nav-btn" title="Back to App" aria-label="Back to App"><span class="material-symbols-rounded">arrow_back</span></button>
 
     <script src="js/highlight.min.js"></script>
     <script src="js/quill.min.js"></script>

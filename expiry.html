@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Expiry Calendar</title>
+<style>
+:root {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --border-radius-md: 6px;
+  --border-radius-lg: 10px;
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f7f6f2;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #5f5e5a;
+  --color-text-tertiary: #888780;
+  --color-border-primary: #3C3489;
+  --color-border-tertiary: #e3e1d9;
+  --color-text-success: #085041;
+  --color-text-danger: #791F1F;
+}
+[data-theme="dark"] {
+  --color-background-primary: #1c1c1e;
+  --color-background-secondary: #2a2a2d;
+  --color-text-primary: #f4f3ee;
+  --color-text-secondary: #b8b6ad;
+  --color-text-tertiary: #888780;
+  --color-border-primary: #AFA9EC;
+  --color-border-tertiary: #3a3a3d;
+}
+html, body { margin: 0; padding: 0; background: var(--color-background-primary); color: var(--color-text-primary); font-family: var(--font-sans); }
+body { padding: 74px 24px 32px; box-sizing: border-box; }
+* { box-sizing: border-box; }
+.pb { font-family: var(--font-sans); padding: 0; }
+.alert-bar { background: #FAEEDA; border-left: 3px solid #EF9F27; border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; padding: 8px 12px; font-size: 12px; color: #412402; margin-bottom: 1.25rem; }
+.week-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 8px; margin-bottom: 1rem; }
+.day-card { border-radius: var(--border-radius-lg); overflow: hidden; cursor: pointer; border: 1px solid transparent; transition: border-color 0.15s; }
+.day-card.active { border: 1.5px solid var(--color-border-primary); }
+.day-header { padding: 9px 10px 7px; }
+.day-name { font-size: 12px; font-weight: 500; margin: 0 0 5px; }
+.badge-row { display: flex; flex-wrap: wrap; gap: 3px; }
+.badge { font-size: 9px; font-weight: 500; padding: 2px 5px; border-radius: 3px; }
+.day-sub { font-size: 10px; color: var(--color-text-secondary); padding: 5px 10px 7px; border-top: 0.5px solid var(--color-border-tertiary); }
+.detail { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1.25rem; background: var(--color-background-primary); }
+.dh { display: flex; align-items: baseline; gap: 10px; margin-bottom: 1rem; flex-wrap: wrap; }
+.dh-day { font-size: 17px; font-weight: 500; color: var(--color-text-primary); }
+.dh-bias { font-size: 12px; color: var(--color-text-secondary); }
+.exp-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; align-items: center; }
+.exp-lbl { font-size: 11px; color: var(--color-text-tertiary); }
+.exp-b { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+.weekly-b { background: #EEEDFE; color: #3C3489; }
+.monthly-b { background: #E1F5EE; color: #085041; }
+.none-b { background: #F1EFE8; color: #5F5E5A; }
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.ib { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; }
+.ib.full { grid-column: 1/-1; }
+.ib-lbl { font-size: 10px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.ib-val { font-size: 12px; color: var(--color-text-primary); line-height: 1.55; }
+.strat-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.strat-tag { font-size: 10px; padding: 2px 7px; border-radius: 3px; background: #FAEEDA; color: #633806; }
+.tl { display: flex; border-radius: var(--border-radius-md); overflow: hidden; margin: 10px 0 8px; }
+.tl-s { flex: 1; text-align: center; padding: 6px 3px; font-size: 9px; font-weight: 500; line-height: 1.4; }
+.note { padding: 7px 12px; border-left: 3px solid #AFA9EC; border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; background: var(--color-background-secondary); font-size: 11px; color: var(--color-text-secondary); }
+.legend { display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.leg-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--color-text-secondary); }
+.leg-dot { width: 10px; height: 10px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="pb">
+  <div class="alert-bar">SEBI reform effective Sep 2025 · Weekly expiries reduced to 2: <strong>Nifty 50 (Tue)</strong> and <strong>Sensex (Thu)</strong> · All other index weeklies discontinued</div>
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#7F77DD"></div>Weekly expiry</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#1D9E75"></div>Monthly expiry (last week)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#888780"></div>No expiry</div>
+  </div>
+  <div class="week-grid" id="wg"></div>
+  <div class="detail" id="dp"></div>
+</div>
+<script src="js/expiry.js"></script>
+</body>
+</html>
